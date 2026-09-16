@@ -288,6 +288,20 @@ type SystemSettings struct {
 	PaymentCancelRateLimitUnit    string `json:"payment_cancel_rate_limit_unit"`
 	PaymentCancelRateLimitMode    string `json:"payment_cancel_rate_limit_window_mode"`
 
+	// 支付宝轮询充值（ApiKey / AgentID 仅管理员可见，用于编辑回显）
+	PaymentAlipayPollEnabled       bool                     `json:"payment_alipay_poll_enabled"`
+	PaymentAlipayPollTiers         []service.AlipayPollTier `json:"payment_alipay_poll_tiers"`
+	PaymentAlipayPollAPIKey        string                   `json:"payment_alipay_poll_api_key"`
+	PaymentAlipayPollAgentID       string                   `json:"payment_alipay_poll_agent_id"`
+	PaymentAlipayPollStartDelaySec int                      `json:"payment_alipay_poll_start_delay_sec"`
+	PaymentAlipayPollIntervalSec   int                      `json:"payment_alipay_poll_interval_sec"`
+	PaymentAlipayPollTimeoutSec    int                      `json:"payment_alipay_poll_timeout_sec"`
+	// 智能体端点与提示词参数（管理端手动维护，不下发给用户）
+	PaymentAlipayPollBaseURL  string `json:"payment_alipay_poll_base_url"`
+	PaymentAlipayPollChatPath string `json:"payment_alipay_poll_chat_path"`
+	PaymentAlipayPollUserID   string `json:"payment_alipay_poll_user_id"`
+	PaymentAlipayPollNote     string `json:"payment_alipay_poll_note"`
+
 	// Force Alipay mobile clients to use QR code payment instead of mobile redirect
 	PaymentAlipayForceQRCode bool `json:"payment_alipay_force_qrcode"`
 	// Use Alipay face-to-face precreate and an app deep link on mobile clients.

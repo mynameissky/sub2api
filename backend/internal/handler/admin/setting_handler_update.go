@@ -328,6 +328,20 @@ type UpdateSettingsRequest struct {
 	// Use Alipay face-to-face precreate and an app deep link on mobile clients.
 	PaymentAlipayMobilePrecreateDeepLink *bool `json:"payment_alipay_mobile_precreate_deep_link"`
 
+	// 支付宝轮询充值
+	PaymentAlipayPollEnabled       *bool                     `json:"payment_alipay_poll_enabled"`
+	PaymentAlipayPollTiers         *[]service.AlipayPollTier `json:"payment_alipay_poll_tiers"`
+	PaymentAlipayPollAPIKey        *string                   `json:"payment_alipay_poll_api_key"`
+	PaymentAlipayPollAgentID       *string                   `json:"payment_alipay_poll_agent_id"`
+	PaymentAlipayPollStartDelaySec *int                      `json:"payment_alipay_poll_start_delay_sec"`
+	PaymentAlipayPollIntervalSec   *int                      `json:"payment_alipay_poll_interval_sec"`
+	PaymentAlipayPollTimeoutSec    *int                      `json:"payment_alipay_poll_timeout_sec"`
+	// 智能体端点与提示词参数（留空即回落到默认值）
+	PaymentAlipayPollBaseURL  *string `json:"payment_alipay_poll_base_url"`
+	PaymentAlipayPollChatPath *string `json:"payment_alipay_poll_chat_path"`
+	PaymentAlipayPollUserID   *string `json:"payment_alipay_poll_user_id"`
+	PaymentAlipayPollNote     *string `json:"payment_alipay_poll_note"`
+
 	// Channel Monitor feature switch
 	ChannelMonitorEnabled                *bool   `json:"channel_monitor_enabled"`
 	ChannelMonitorMode                   *string `json:"channel_monitor_mode"`
@@ -2091,6 +2105,18 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			CancelRateLimitMode:           req.PaymentCancelRateLimitMode,
 			AlipayForceQRCode:             req.PaymentAlipayForceQRCode,
 			AlipayMobilePrecreateDeepLink: req.PaymentAlipayMobilePrecreateDeepLink,
+
+			AlipayPollEnabled:       req.PaymentAlipayPollEnabled,
+			AlipayPollTiers:         req.PaymentAlipayPollTiers,
+			AlipayPollAPIKey:        req.PaymentAlipayPollAPIKey,
+			AlipayPollAgentID:       req.PaymentAlipayPollAgentID,
+			AlipayPollStartDelaySec: req.PaymentAlipayPollStartDelaySec,
+			AlipayPollIntervalSec:   req.PaymentAlipayPollIntervalSec,
+			AlipayPollTimeoutSec:    req.PaymentAlipayPollTimeoutSec,
+			AlipayPollBaseURL:       req.PaymentAlipayPollBaseURL,
+			AlipayPollChatPath:      req.PaymentAlipayPollChatPath,
+			AlipayPollUserID:        req.PaymentAlipayPollUserID,
+			AlipayPollNote:          req.PaymentAlipayPollNote,
 		}
 		if err := h.paymentConfigService.UpdatePaymentConfig(c.Request.Context(), paymentReq); err != nil {
 			response.ErrorFrom(c, err)
@@ -2131,6 +2157,11 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	}
 	if updatedPaymentCfg == nil {
 		updatedPaymentCfg = &service.PaymentConfig{}
+	}
+	// 只写凭证：回显给管理员以便继续编辑
+	updatedAlipayPollCreds := service.AlipayPollCredentials{}
+	if h.paymentConfigService != nil {
+		updatedAlipayPollCreds = h.paymentConfigService.AlipayPollCredentialValues(c.Request.Context())
 	}
 	passkeyConfigured, passkeyRPID, passkeyRPOrigins := h.settingService.PasskeyConfiguration()
 
@@ -2367,6 +2398,17 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		PaymentCancelRateLimitMode:                             updatedPaymentCfg.CancelRateLimitMode,
 		PaymentAlipayForceQRCode:                               updatedPaymentCfg.AlipayForceQRCode,
 		PaymentAlipayMobilePrecreateDeepLink:                   updatedPaymentCfg.AlipayMobilePrecreateDeepLink,
+		PaymentAlipayPollEnabled:                               updatedPaymentCfg.AlipayPollEnabled,
+		PaymentAlipayPollTiers:                                 alipayPollTiersToDTO(updatedPaymentCfg.AlipayPollTiers),
+		PaymentAlipayPollAPIKey:                                updatedAlipayPollCreds.APIKey,
+		PaymentAlipayPollAgentID:                               updatedAlipayPollCreds.AgentID,
+		PaymentAlipayPollStartDelaySec:                         updatedPaymentCfg.AlipayPollStartDelaySec,
+		PaymentAlipayPollIntervalSec:                           updatedPaymentCfg.AlipayPollIntervalSec,
+		PaymentAlipayPollTimeoutSec:                            updatedPaymentCfg.AlipayPollTimeoutSec,
+		PaymentAlipayPollBaseURL:                               updatedPaymentCfg.AlipayPollBaseURL,
+		PaymentAlipayPollChatPath:                              updatedPaymentCfg.AlipayPollChatPath,
+		PaymentAlipayPollUserID:                                updatedPaymentCfg.AlipayPollUserID,
+		PaymentAlipayPollNote:                                  updatedPaymentCfg.AlipayPollNote,
 
 		ChannelMonitorEnabled:                updatedSettings.ChannelMonitorEnabled,
 		ChannelMonitorMode:                   updatedSettings.ChannelMonitorMode,
@@ -2434,7 +2476,13 @@ func hasPaymentFields(req UpdateSettingsRequest) bool {
 		req.PaymentHelpText != nil || req.PaymentCancelRateLimitEnabled != nil ||
 		req.PaymentCancelRateLimitMax != nil || req.PaymentCancelRateLimitWindow != nil ||
 		req.PaymentCancelRateLimitUnit != nil || req.PaymentCancelRateLimitMode != nil ||
-		req.PaymentAlipayForceQRCode != nil || req.PaymentAlipayMobilePrecreateDeepLink != nil
+		req.PaymentAlipayForceQRCode != nil || req.PaymentAlipayMobilePrecreateDeepLink != nil ||
+		req.PaymentAlipayPollEnabled != nil || req.PaymentAlipayPollTiers != nil ||
+		req.PaymentAlipayPollAPIKey != nil || req.PaymentAlipayPollAgentID != nil ||
+		req.PaymentAlipayPollStartDelaySec != nil || req.PaymentAlipayPollIntervalSec != nil ||
+		req.PaymentAlipayPollTimeoutSec != nil ||
+		req.PaymentAlipayPollBaseURL != nil || req.PaymentAlipayPollChatPath != nil ||
+		req.PaymentAlipayPollUserID != nil || req.PaymentAlipayPollNote != nil
 }
 
 // ensureDingTalkSyncAttributes 在保存 settings 后，按 admin 配置的 (attr key, attr name)

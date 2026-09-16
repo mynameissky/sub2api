@@ -18,6 +18,9 @@ const (
 	TypeLink         PaymentType = "link"
 	TypeEasyPay      PaymentType = "easypay"
 	TypeAirwallex    PaymentType = "airwallex"
+	// TypeAlipayPoll 是由智能体（Tbox）托管生成收款二维码 + 轮询查单的支付宝充值方式。
+	// 它不依赖任何支付渠道实例（provider instance），因此不属于 TypeAlipay 的派生类型。
+	TypeAlipayPoll PaymentType = "alipay_poll"
 )
 
 // Order status constants shared across payment and service layers.
@@ -86,6 +89,9 @@ func GetBasePaymentType(t string) string {
 		return TypeEasyPay
 	case t == TypeAirwallex:
 		return TypeAirwallex
+	case t == TypeAlipayPoll:
+		// 必须先于下面的 alipay 前缀匹配返回，否则 "alipay_poll" 会被归一化成 "alipay"。
+		return TypeAlipayPoll
 	case t == TypeStripe || t == TypeCard || t == TypeLink:
 		return TypeStripe
 	case len(t) >= len(TypeAlipay) && t[:len(TypeAlipay)] == TypeAlipay:

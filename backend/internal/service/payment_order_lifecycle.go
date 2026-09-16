@@ -149,9 +149,32 @@ func (s *PaymentService) reconcilePaid(ctx context.Context, o *dbent.PaymentOrde
 	return s.checkPaidWithOptions(ctx, o, checkPaidOptions{})
 }
 
+// isAlipayPollOrder reports whether the order belongs to the provider-less
+// Alipay poll recharge flow, whose status is tracked by the agent polling
+// endpoint rather than by a payment provider instance.
+func isAlipayPollOrder(o *dbent.PaymentOrder) bool {
+	if o == nil {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(o.PaymentType), payment.TypeAlipayPoll) {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(psStringValue(o.ProviderKey)), payment.TypeAlipayPoll)
+}
+
 func (s *PaymentService) checkPaidWithOptions(ctx context.Context, o *dbent.PaymentOrder, opts checkPaidOptions) string {
+	// alipay_poll 订单没有上游 provider 实例，对账由 VerifyAlipayPollOrder 完成，
+	// 这里必须直接返回，避免走通用 provider 管线（其 fallback 会把 payment_type
+	// 归一化并尝试创建 provider）。
+	if isAlipayPollOrder(o) {
+		return ""
+	}
 	prov, err := s.getOrderProvider(ctx, o)
 	if err != nil {
+		return ""
+	}
+	if prov == nil {
+		// 无上游 provider 实例，无可对账对象，视为未支付。
 		return ""
 	}
 	queryRef := paymentOrderQueryReference(o, prov)
@@ -311,6 +334,8 @@ func (s *PaymentService) ReconcilePendingPaymentOrders(ctx context.Context) (int
 		Where(
 			paymentorder.StatusEQ(OrderStatusPending),
 			paymentorder.ExpiresAtGT(now),
+			// alipay_poll 前缀同样是 "alipay_"，但其对账走独立轮询接口，这里排除。
+			paymentorder.PaymentTypeNEQ(payment.TypeAlipayPoll),
 			paymentorder.Or(
 				paymentorder.PaymentTypeEQ(payment.TypeWxpay),
 				paymentorder.PaymentTypeHasPrefix(payment.TypeWxpay+"_"),

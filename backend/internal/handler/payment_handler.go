@@ -140,6 +140,9 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 		})
 	}
 
+	// 支付宝轮询充值：凭证（ApiKey/智能体ID）绝不下发，此处只暴露展示所需的档位与时长。
+	alipayPollEnabled := cfg.AlipayPollEnabled && len(cfg.AlipayPollTiers) > 0
+
 	response.Success(c, checkoutInfoResponse{
 		Methods:                       limitsResp.Methods,
 		GlobalMin:                     limitsResp.GlobalMin,
@@ -154,7 +157,20 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 		StripePublishableKey:          cfg.StripePublishableKey,
 		AlipayForceQRCode:             cfg.AlipayForceQRCode,
 		AlipayMobilePrecreateDeepLink: alipayMobilePrecreateDeepLink,
+		AlipayPollEnabled:             alipayPollEnabled,
+		AlipayPollTiers:               alipayPollTiersOrEmpty(cfg.AlipayPollTiers, alipayPollEnabled),
+		AlipayPollStartDelaySec:       cfg.AlipayPollStartDelaySec,
+		AlipayPollIntervalSec:         cfg.AlipayPollIntervalSec,
+		AlipayPollTimeoutSec:          cfg.AlipayPollTimeoutSec,
 	})
+}
+
+// alipayPollTiersOrEmpty 在未启用时返回空数组，避免用户侧拿到无意义的档位配置。
+func alipayPollTiersOrEmpty(tiers []service.AlipayPollTier, enabled bool) []service.AlipayPollTier {
+	if !enabled {
+		return []service.AlipayPollTier{}
+	}
+	return tiers
 }
 
 type checkoutInfoResponse struct {
@@ -171,6 +187,13 @@ type checkoutInfoResponse struct {
 	StripePublishableKey          string                          `json:"stripe_publishable_key"`
 	AlipayForceQRCode             bool                            `json:"alipay_force_qrcode"`
 	AlipayMobilePrecreateDeepLink bool                            `json:"alipay_mobile_precreate_deep_link"`
+
+	// 支付宝轮询充值（不含任何凭证字段）
+	AlipayPollEnabled       bool                     `json:"alipay_poll_enabled"`
+	AlipayPollTiers         []service.AlipayPollTier `json:"alipay_poll_tiers"`
+	AlipayPollStartDelaySec int                      `json:"alipay_poll_start_delay_sec"`
+	AlipayPollIntervalSec   int                      `json:"alipay_poll_interval_sec"`
+	AlipayPollTimeoutSec    int                      `json:"alipay_poll_timeout_sec"`
 }
 
 type checkoutPlan struct {
@@ -330,6 +353,53 @@ func applyWeChatPaymentResumeClaims(req *CreateOrderRequest, claims *service.WeC
 		req.PlanID = claims.PlanID
 	}
 	return nil
+}
+
+// AlipayPollCreateRequest is the request body for creating an Alipay poll order.
+type AlipayPollCreateRequest struct {
+	TierIndex int `json:"tier_index"`
+}
+
+// CreateAlipayPollOrder creates an Alipay poll order and returns its QR code.
+// POST /api/v1/payment/alipay-poll/orders
+func (h *PaymentHandler) CreateAlipayPollOrder(c *gin.Context) {
+	subject, ok := requireAuth(c)
+	if !ok {
+		return
+	}
+	var req AlipayPollCreateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	result, err := h.paymentService.CreateAlipayPollOrder(
+		c.Request.Context(), subject.UserID, req.TierIndex, c.ClientIP(), c.Request.Host,
+	)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+// VerifyAlipayPollOrder polls the agent for an Alipay poll order's status.
+// POST /api/v1/payment/alipay-poll/orders/verify
+func (h *PaymentHandler) VerifyAlipayPollOrder(c *gin.Context) {
+	subject, ok := requireAuth(c)
+	if !ok {
+		return
+	}
+	var req VerifyOrderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	order, err := h.paymentService.VerifyAlipayPollOrder(c.Request.Context(), req.OutTradeNo, subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, sanitizePaymentOrderForResponse(order))
 }
 
 // GetMyOrders returns the authenticated user's orders.

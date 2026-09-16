@@ -34,6 +34,13 @@ func RegisterPaymentRoutes(
 		authenticated.GET("/plans", paymentHandler.GetPlans)
 		authenticated.GET("/limits", paymentHandler.GetLimits)
 
+		// 支付宝轮询充值（agent 生成二维码 + 轮询查单）
+		alipayPoll := authenticated.Group("/alipay-poll")
+		{
+			alipayPoll.POST("/orders", paymentHandler.CreateAlipayPollOrder)
+			alipayPoll.POST("/orders/verify", paymentHandler.VerifyAlipayPollOrder)
+		}
+
 		orders := authenticated.Group("/orders")
 		{
 			orders.POST("", paymentHandler.CreateOrder)

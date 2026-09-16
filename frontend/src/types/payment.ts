@@ -78,6 +78,40 @@ export interface CheckoutInfoResponse {
   alipay_force_qrcode?: boolean
   /** When true, official Alipay mobile orders use precreate plus an Alipay app deep link */
   alipay_mobile_precreate_deep_link?: boolean
+  /** When true, the Alipay poll recharge tab is available */
+  alipay_poll_enabled?: boolean
+  /** Recharge tiers for the Alipay poll flow */
+  alipay_poll_tiers?: AlipayPollTier[]
+  /** Seconds to wait after showing the QR code before the first status poll */
+  alipay_poll_start_delay_sec?: number
+  /** Seconds between status polls */
+  alipay_poll_interval_sec?: number
+  /** Order timeout in seconds, after which the order expires */
+  alipay_poll_timeout_sec?: number
+}
+
+/** A single recharge tier of the Alipay poll flow */
+export interface AlipayPollTier {
+  /** Actual amount the user pays in CNY */
+  price: number
+  /** Balance credit granted after payment */
+  credit: number
+}
+
+/** Result of creating an Alipay poll order */
+export interface AlipayPollCreateResult {
+  order_id: number
+  out_trade_no: string
+  /** Balance credit granted (到账额度) */
+  amount: number
+  /** Actual amount paid */
+  pay_amount: number
+  /** QR code image source, usable directly in an <img src> */
+  qr_image: string
+  status: string
+  expires_at: string
+  poll_start_delay_sec: number
+  poll_interval_sec: number
 }
 
 // ==================== Orders ====================

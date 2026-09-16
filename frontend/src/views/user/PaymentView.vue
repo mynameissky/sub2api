@@ -93,6 +93,82 @@
             </button>
             </template>
           </template>
+          <!-- Alipay Poll Recharge Tab -->
+          <template v-else-if="activeTab === 'alipayPoll'">
+            <div class="card p-5">
+              <p class="text-xs font-medium text-gray-400 dark:text-gray-500">{{ t('payment.rechargeAccount') }}</p>
+              <p class="mt-1 text-base font-semibold text-gray-900 dark:text-white">{{ user?.username || '' }}</p>
+              <p class="mt-0.5 text-sm font-medium text-green-600 dark:text-green-400">{{ t('payment.currentBalance') }}: {{ user?.balance?.toFixed(2) || '0.00' }}</p>
+            </div>
+
+            <!-- Step 1: pick a tier -->
+            <div v-if="alipayPollPhase === 'select'" class="card p-6">
+              <h3 class="mb-4 text-base font-semibold text-gray-900 dark:text-white">{{ t('payment.alipayPollSelectTier') }}</h3>
+              <div v-if="alipayPollTiers.length" class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <button v-for="(tier, index) in alipayPollTiers" :key="index" type="button"
+                  class="rounded-xl border-2 p-4 text-center transition-all"
+                  :class="alipayPollTierIndex === index
+                    ? 'border-primary-500 bg-primary-50 dark:border-primary-400 dark:bg-primary-500/10'
+                    : 'border-gray-200 hover:border-primary-300 dark:border-dark-600 dark:hover:border-primary-500'"
+                  @click="alipayPollTierIndex = index">
+                  <p class="text-lg font-bold text-gray-900 dark:text-white">¥{{ formatAlipayPollAmount(tier.price) }}</p>
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('payment.alipayPollTierCredit', { credit: formatAlipayPollAmount(tier.credit) }) }}</p>
+                </button>
+              </div>
+              <p v-else class="text-sm text-gray-500 dark:text-gray-400">{{ t('payment.notAvailable') }}</p>
+              <p v-if="alipayPollError" class="mt-3 text-xs text-red-600 dark:text-red-400">{{ alipayPollError }}</p>
+              <button class="btn btn-primary mt-5 w-full py-3 text-base font-medium"
+                :disabled="alipayPollTierIndex < 0 || alipayPollSubmitting" @click="submitAlipayPoll">
+                <span v-if="alipayPollSubmitting" class="flex items-center justify-center gap-2">
+                  <span class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
+                  {{ t('common.processing') }}
+                </span>
+                <span v-else>{{ t('payment.alipayPollConfirm') }}</span>
+              </button>
+            </div>
+
+            <!-- Step 2: show the QR code and poll -->
+            <div v-else class="card p-6">
+              <!-- Settled successfully -->
+              <div v-if="alipayPollStatus === 'paid'" class="flex flex-col items-center gap-3 py-6 text-center">
+                <div class="flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-500/15">
+                  <svg class="h-6 w-6 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                </div>
+                <p class="text-base font-semibold text-gray-900 dark:text-white">{{ t('payment.alipayPollPaid') }}</p>
+                <button class="btn btn-primary mt-1" @click="resetAlipayPoll">{{ t('payment.alipayPollBack') }}</button>
+              </div>
+              <!-- Timed out or closed -->
+              <div v-else-if="alipayPollStatus === 'expired'" class="flex flex-col items-center gap-3 py-6 text-center">
+                <div class="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-500/15">
+                  <svg class="h-6 w-6 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+                </div>
+                <p class="text-base font-semibold text-gray-900 dark:text-white">{{ t('payment.alipayPollExpired') }}</p>
+                <button class="btn btn-primary mt-1" @click="resetAlipayPoll">{{ t('payment.alipayPollBack') }}</button>
+              </div>
+              <!-- Waiting for payment -->
+              <template v-else>
+                <h3 class="mb-4 text-center text-base font-semibold text-gray-900 dark:text-white">{{ t('payment.alipayPollScanToPay') }}</h3>
+                <div class="flex flex-col items-center gap-3">
+                  <div v-if="alipayPollQR" class="rounded-xl border border-gray-200 bg-white p-3 dark:border-dark-600">
+                    <img :src="alipayPollQR" alt=""
+                      class="h-56 w-56 cursor-pointer object-contain transition-opacity hover:opacity-80"
+                      @click="previewImage = alipayPollQR" />
+                  </div>
+                  <p v-else class="text-sm text-amber-600 dark:text-amber-400">{{ t('payment.alipayPollNoQR') }}</p>
+                  <div class="text-center">
+                    <p class="text-lg font-bold text-primary-600 dark:text-primary-400">¥{{ formatAlipayPollAmount(alipayPollPayAmount) }}</p>
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('payment.alipayPollTierCredit', { credit: formatAlipayPollAmount(alipayPollCredit) }) }}</p>
+                    <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">{{ t('payment.alipayPollOrderNo') }}: {{ alipayPollOrderNo }}</p>
+                  </div>
+                  <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                    <span class="h-4 w-4 animate-spin rounded-full border-2 border-primary-500 border-t-transparent"></span>
+                    {{ t('payment.alipayPollPolling') }}
+                  </div>
+                  <button class="btn btn-secondary mt-1" @click="cancelPendingAlipayPoll">{{ t('payment.alipayPollBack') }}</button>
+                </div>
+              </template>
+            </div>
+          </template>
           <!-- Subscribe Tab -->
           <template v-else-if="activeTab === 'subscription'">
             <!-- Subscription confirm (inline, replaces plan list) -->
@@ -256,7 +332,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
@@ -325,13 +401,32 @@ const loading = ref(true)
 const submitting = ref(false)
 const errorMessage = ref('')
 const errorHintMessage = ref('')
-const activeTab = ref<'recharge' | 'subscription'>('recharge')
+const activeTab = ref<'recharge' | 'alipayPoll' | 'subscription'>('recharge')
 const amount = ref<number | null>(null)
 const selectedMethod = ref('')
 const selectedPlan = ref<SubscriptionPlan | null>(null)
 const previewImage = ref('')
 
 const paymentPhase = ref<'select' | 'paying'>('select')
+
+// ---- 支付宝轮询充值（智能体生成二维码 + 轮询查单）----
+type AlipayPollPhase = 'select' | 'polling'
+type AlipayPollStatus = 'pending' | 'paid' | 'expired'
+
+const alipayPollPhase = ref<AlipayPollPhase>('select')
+const alipayPollStatus = ref<AlipayPollStatus>('pending')
+const alipayPollTierIndex = ref(-1)
+const alipayPollSubmitting = ref(false)
+const alipayPollError = ref('')
+const alipayPollQR = ref('')
+const alipayPollOrderId = ref(0)
+const alipayPollOrderNo = ref('')
+const alipayPollPayAmount = ref(0)
+const alipayPollCredit = ref(0)
+const alipayPollIntervalSec = ref(5)
+let alipayPollTimer: ReturnType<typeof setTimeout> | null = null
+
+const alipayPollTiers = computed(() => checkout.value.alipay_poll_tiers ?? [])
 
 interface CreateOrderOptions {
   openid?: string
@@ -479,6 +574,118 @@ function buildWechatOAuthAuthorizeUrl(
   }
 }
 
+// ---- 支付宝轮询充值：创建 / 轮询 / 复位 ----
+
+/** 展示用金额：去掉多余的小数位（12.00 → 12，12.50 → 12.5）。 */
+function formatAlipayPollAmount(value: number): string {
+  if (!Number.isFinite(value)) return '0'
+  return String(Math.round(value * 100) / 100)
+}
+
+function clearAlipayPollTimer() {
+  if (alipayPollTimer !== null) {
+    clearTimeout(alipayPollTimer)
+    alipayPollTimer = null
+  }
+}
+
+/** 复位到档位选择态（不取消订单，调用方负责）。 */
+function resetAlipayPoll() {
+  clearAlipayPollTimer()
+  alipayPollPhase.value = 'select'
+  alipayPollStatus.value = 'pending'
+  alipayPollQR.value = ''
+  alipayPollOrderId.value = 0
+  alipayPollOrderNo.value = ''
+  alipayPollPayAmount.value = 0
+  alipayPollCredit.value = 0
+  alipayPollError.value = ''
+}
+
+/**
+ * 取消轮询中且尚未结算的订单（切页 / 离开页面时调用），然后复位。
+ * 已结算（paid / expired）时只复位，不再取消。
+ */
+async function cancelPendingAlipayPoll() {
+  const orderId = alipayPollOrderId.value
+  const shouldCancel =
+    alipayPollPhase.value === 'polling' && alipayPollStatus.value === 'pending' && orderId > 0
+  clearAlipayPollTimer()
+  if (shouldCancel) {
+    try {
+      await paymentAPI.cancelOrder(orderId)
+      appStore.showInfo(t('payment.alipayPollCancelled'))
+    } catch {
+      // 取消失败不阻塞复位，订单最终会由后端超时关单
+    }
+  }
+  resetAlipayPoll()
+}
+
+async function submitAlipayPoll() {
+  if (alipayPollTierIndex.value < 0 || alipayPollSubmitting.value) return
+  alipayPollSubmitting.value = true
+  alipayPollError.value = ''
+  try {
+    const res = await paymentAPI.createAlipayPollOrder(alipayPollTierIndex.value)
+    const data = res.data
+    alipayPollOrderId.value = data.order_id
+    alipayPollOrderNo.value = data.out_trade_no
+    alipayPollPayAmount.value = data.pay_amount
+    alipayPollCredit.value = data.amount
+    alipayPollQR.value = data.qr_image || ''
+    alipayPollIntervalSec.value = Math.max(1, Math.floor(Number(data.poll_interval_sec) || 5))
+    alipayPollStatus.value = 'pending'
+    alipayPollPhase.value = 'polling'
+    // 首次查单前先等 start_delay，避免二维码尚未被扫就产生无效请求
+    scheduleAlipayPollPoll(data.poll_start_delay_sec)
+  } catch (err) {
+    alipayPollError.value = extractI18nErrorMessage(
+      err,
+      t,
+      'payment.errors',
+      extractApiErrorMessage(err, t('payment.alipayPollCreateFailed')),
+    )
+  } finally {
+    alipayPollSubmitting.value = false
+  }
+}
+
+function scheduleAlipayPollPoll(delaySec: number) {
+  clearAlipayPollTimer()
+  if (alipayPollPhase.value !== 'polling' || alipayPollStatus.value !== 'pending') return
+  const delay = Math.max(1, Math.floor(Number(delaySec) || 1)) * 1000
+  alipayPollTimer = setTimeout(() => {
+    alipayPollTimer = null
+    void pollAlipayPollOrder()
+  }, delay)
+}
+
+async function pollAlipayPollOrder() {
+  if (alipayPollPhase.value !== 'polling' || alipayPollStatus.value !== 'pending') return
+  const outTradeNo = alipayPollOrderNo.value
+  if (!outTradeNo) return
+  try {
+    const res = await paymentAPI.verifyAlipayPollOrder(outTradeNo)
+    const status = res.data?.status
+    // 后端在履约时同步推进 PAID → RECHARGING → COMPLETED，三者都视为已到账
+    if (status === 'COMPLETED' || status === 'PAID' || status === 'RECHARGING') {
+      alipayPollStatus.value = 'paid'
+      clearAlipayPollTimer()
+      authStore.refreshUser()
+      return
+    }
+    if (status === 'EXPIRED' || status === 'CANCELLED' || status === 'FAILED') {
+      alipayPollStatus.value = 'expired'
+      clearAlipayPollTimer()
+      return
+    }
+  } catch {
+    // 查单瞬时异常：忽略本次，保持 PENDING 由下一次轮询重试
+  }
+  scheduleAlipayPollPoll(alipayPollIntervalSec.value)
+}
+
 function onPaymentDone() {
   const wasSubscription = paymentState.value.orderType === 'subscription'
   resetPayment()
@@ -512,8 +719,19 @@ const renderedHelpText = computed(() => DOMPurify.sanitize(
   marked.parse(checkout.value.help_text || '', { async: false, gfm: true, breaks: false }),
 ))
 
+// 支付宝轮询充值同样走余额充值，因此受 balance_disabled 约束；
+// 开关与档位均来自后端，凭证不下发前端。
+const alipayPollAvailable = computed(
+  () => checkout.value.alipay_poll_enabled === true && !checkout.value.balance_disabled,
+)
+
 const tabs = computed(() => {
-  const result: { key: 'recharge' | 'subscription'; label: string }[] = []
+  const result: { key: 'recharge' | 'alipayPoll' | 'subscription'; label: string }[] = []
+  // 启用支付宝轮询充值后，充值页只保留该方式，常规充值与订阅入口一并隐藏
+  if (alipayPollAvailable.value) {
+    result.push({ key: 'alipayPoll', label: t('payment.tabAlipayPoll') })
+    return result
+  }
   if (!checkout.value.balance_disabled) result.push({ key: 'recharge', label: t('payment.tabTopUp') })
   result.push({ key: 'subscription', label: t('payment.tabSubscribe') })
   return result
@@ -706,6 +924,17 @@ watch(() => [validAmount.value, selectedMethod.value] as const, ([amt, method]) 
   if (amt <= 0 || amountFitsMethod(amt, method)) return
   const available = enabledMethods.value.find((m) => amountFitsMethod(amt, m))
   if (available) selectedMethod.value = available
+})
+
+// 离开支付宝轮询充值 Tab 时取消未完成的订单，避免留下悬挂的待支付单
+watch(activeTab, (tab, prev) => {
+  if (prev === 'alipayPoll' && tab !== 'alipayPoll' && alipayPollPhase.value === 'polling') {
+    void cancelPendingAlipayPoll()
+  }
+})
+
+onBeforeUnmount(() => {
+  void cancelPendingAlipayPoll()
 })
 
 // Payment button class: follows selected payment method color
@@ -1142,11 +1371,8 @@ onMounted(async () => {
       }
     }
     await resumeWechatPaymentFromQuery()
-    if (checkout.value.balance_disabled) {
-      activeTab.value = 'subscription'
-    }
     // Handle renewal navigation: ?tab=subscription&group=123
-    if (route.query.tab === 'subscription') {
+    if (route.query.tab === 'subscription' && !alipayPollAvailable.value) {
       activeTab.value = 'subscription'
       if (route.query.group) {
         const groupId = Number(route.query.group)
@@ -1158,6 +1384,13 @@ onMounted(async () => {
           showRenewalModal.value = true
         }
       }
+    }
+    // 启用支付宝轮询充值后充值页只剩一个 tab，此处兜底纠正 activeTab，
+    // 避免 ?tab=subscription / balance_disabled 把默认值留在已隐藏的 tab 上。
+    if (alipayPollAvailable.value) {
+      activeTab.value = 'alipayPoll'
+    } else if (checkout.value.balance_disabled) {
+      activeTab.value = 'subscription'
     }
   } catch (err: unknown) { appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error'))) }
   finally { loading.value = false }

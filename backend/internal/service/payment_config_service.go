@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -40,7 +41,51 @@ const (
 	SettingCancelWindowMode              = "CANCEL_RATE_LIMIT_WINDOW_MODE"
 	SettingAlipayForceQRCode             = "ALIPAY_FORCE_QRCODE"
 	SettingAlipayMobilePrecreateDeepLink = "ALIPAY_MOBILE_PRECREATE_DEEP_LINK"
+
+	// 支付宝轮询充值（agent 生成二维码 + 轮询查单）。
+	// ApiKey / AgentID 是只写凭证：用户侧接口绝不返回，仅服务端通过
+	// AlipayPollCredentials 读取，只有管理员设置接口会回显。
+	SettingAlipayPollEnabled    = "ALIPAY_POLL_ENABLED"
+	SettingAlipayPollTiers      = "ALIPAY_POLL_TIERS"
+	SettingAlipayPollAPIKey     = "ALIPAY_POLL_API_KEY"
+	SettingAlipayPollAgentID    = "ALIPAY_POLL_AGENT_ID"
+	SettingAlipayPollStartDelay = "ALIPAY_POLL_START_DELAY_SEC"
+	SettingAlipayPollInterval   = "ALIPAY_POLL_INTERVAL_SEC"
+	SettingAlipayPollTimeout    = "ALIPAY_POLL_TIMEOUT_SEC"
+	// 智能体端点与提示词参数，可在管理端手动维护。
+	// 同样是服务端集成细节：不进用户侧接口（见 PaymentConfig 的 json:"-" 字段）。
+	SettingAlipayPollBaseURL  = "ALIPAY_POLL_BASE_URL"
+	SettingAlipayPollChatPath = "ALIPAY_POLL_CHAT_PATH"
+	SettingAlipayPollUserID   = "ALIPAY_POLL_USER_ID"
+	SettingAlipayPollNote     = "ALIPAY_POLL_NOTE"
 )
+
+// Default values for the Alipay poll recharge settings.
+// 端点相关的默认值是 Tbox（蚂蚁百宝箱）的公开接口，留空时回落到这里。
+const (
+	defaultAlipayPollStartDelaySec = 30
+	defaultAlipayPollIntervalSec   = 5
+	defaultAlipayPollTimeoutSec    = 600
+	defaultAlipayPollBaseURL       = "https://o.tbox.cn"
+	defaultAlipayPollChatPath      = "/openapi/v1/chat/create"
+	// defaultAlipayPollUserID 是调用智能体时固定的用户标识。
+	defaultAlipayPollUserID = "sub2api_alipay_qr_client"
+	// defaultAlipayPollNote 是生成二维码时写入支付宝订单的固定备注。
+	defaultAlipayPollNote = "FaithAPI充值"
+)
+
+// AlipayPollTier is one selectable Alipay poll recharge tier.
+type AlipayPollTier struct {
+	Price  float64 `json:"price"`  // 实付金额（¥，作为支付宝收款金额传给智能体）
+	Credit float64 `json:"credit"` // 到账额度（支付成功后充值到余额）
+}
+
+// AlipayPollCredentials holds the write-only agent credentials used to
+// generate Alipay QR codes and query order status.
+type AlipayPollCredentials struct {
+	APIKey  string
+	AgentID string
+}
 
 // Default values for payment configuration settings.
 const (
@@ -80,6 +125,62 @@ type PaymentConfig struct {
 	AlipayForceQRCode bool `json:"alipay_force_qrcode"`
 	// Use Alipay face-to-face precreate and an app deep link on mobile clients.
 	AlipayMobilePrecreateDeepLink bool `json:"alipay_mobile_precreate_deep_link"`
+
+	// 支付宝轮询充值。注意：ApiKey / AgentID 不属于本结构体（也不下发），
+	// 仅通过 AlipayPollCredentials 在服务端读取。
+	AlipayPollEnabled       bool             `json:"alipay_poll_enabled"`
+	AlipayPollTiers         []AlipayPollTier `json:"alipay_poll_tiers"`
+	AlipayPollStartDelaySec int              `json:"alipay_poll_start_delay_sec"`
+	AlipayPollIntervalSec   int              `json:"alipay_poll_interval_sec"`
+	AlipayPollTimeoutSec    int              `json:"alipay_poll_timeout_sec"`
+
+	// 智能体端点与提示词参数（管理端可维护）。
+	// 用 json:"-" 显式排除：本结构体会被 GET /payment/config 原样序列化给用户，
+	// 这些属于服务端集成细节，不应下发（管理端设置接口单独回显）。
+	AlipayPollBaseURL  string `json:"-"`
+	AlipayPollChatPath string `json:"-"`
+	AlipayPollUserID   string `json:"-"`
+	AlipayPollNote     string `json:"-"`
+}
+
+// AlipayPollEndpoint 是调用智能体所需的端点与提示词参数。
+// 所有字段都可在管理端手动维护，留空时由 parsePaymentConfig 回落到默认值。
+type AlipayPollEndpoint struct {
+	BaseURL  string
+	ChatPath string
+	UserID   string
+	Note     string
+}
+
+// Endpoint 返回当前配置对应的智能体端点参数。
+func (c *PaymentConfig) Endpoint() AlipayPollEndpoint {
+	if c == nil {
+		return AlipayPollEndpoint{
+			BaseURL:  defaultAlipayPollBaseURL,
+			ChatPath: defaultAlipayPollChatPath,
+			UserID:   defaultAlipayPollUserID,
+			Note:     defaultAlipayPollNote,
+		}
+	}
+	return AlipayPollEndpoint{
+		BaseURL:  c.AlipayPollBaseURL,
+		ChatPath: c.AlipayPollChatPath,
+		UserID:   c.AlipayPollUserID,
+		Note:     c.AlipayPollNote,
+	}
+}
+
+// URL 返回拼接好的智能体接口地址（容忍两端多余或缺失的斜杠）。
+func (e AlipayPollEndpoint) URL() string {
+	base := strings.TrimRight(strings.TrimSpace(e.BaseURL), "/")
+	path := strings.TrimSpace(e.ChatPath)
+	if path == "" {
+		path = defaultAlipayPollChatPath
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	return base + path
 }
 
 // UpdatePaymentConfigRequest contains fields to update payment configuration.
@@ -117,6 +218,20 @@ type UpdatePaymentConfigRequest struct {
 	VisibleMethodWxpaySource   *string `json:"payment_visible_method_wxpay_source"`
 	VisibleMethodAlipayEnabled *bool   `json:"payment_visible_method_alipay_enabled"`
 	VisibleMethodWxpayEnabled  *bool   `json:"payment_visible_method_wxpay_enabled"`
+
+	// 支付宝轮询充值
+	AlipayPollEnabled       *bool             `json:"payment_alipay_poll_enabled"`
+	AlipayPollTiers         *[]AlipayPollTier `json:"payment_alipay_poll_tiers"`
+	AlipayPollAPIKey        *string           `json:"payment_alipay_poll_api_key"`
+	AlipayPollAgentID       *string           `json:"payment_alipay_poll_agent_id"`
+	AlipayPollStartDelaySec *int              `json:"payment_alipay_poll_start_delay_sec"`
+	AlipayPollIntervalSec   *int              `json:"payment_alipay_poll_interval_sec"`
+	AlipayPollTimeoutSec    *int              `json:"payment_alipay_poll_timeout_sec"`
+	// 智能体端点与提示词参数（留空即回落到默认值）
+	AlipayPollBaseURL  *string `json:"payment_alipay_poll_base_url"`
+	AlipayPollChatPath *string `json:"payment_alipay_poll_chat_path"`
+	AlipayPollUserID   *string `json:"payment_alipay_poll_user_id"`
+	AlipayPollNote     *string `json:"payment_alipay_poll_note"`
 }
 
 // MethodLimits holds per-payment-type limits.
@@ -227,6 +342,9 @@ func (s *PaymentConfigService) GetPaymentConfig(ctx context.Context) (*PaymentCo
 		SettingAlipayForceQRCode, SettingAlipayMobilePrecreateDeepLink,
 		SettingPaymentVisibleMethodAlipayEnabled, SettingPaymentVisibleMethodAlipaySource,
 		SettingPaymentVisibleMethodWxpayEnabled, SettingPaymentVisibleMethodWxpaySource,
+		SettingAlipayPollEnabled, SettingAlipayPollTiers,
+		SettingAlipayPollStartDelay, SettingAlipayPollInterval, SettingAlipayPollTimeout,
+		SettingAlipayPollBaseURL, SettingAlipayPollChatPath, SettingAlipayPollUserID, SettingAlipayPollNote,
 	}
 	vals, err := s.settingRepo.GetMultiple(ctx, keys)
 	if err != nil {
@@ -264,6 +382,26 @@ func (s *PaymentConfigService) parsePaymentConfig(vals map[string]string) *Payme
 
 		AlipayForceQRCode:             vals[SettingAlipayForceQRCode] == "true",
 		AlipayMobilePrecreateDeepLink: vals[SettingAlipayMobilePrecreateDeepLink] == "true",
+
+		AlipayPollEnabled:       vals[SettingAlipayPollEnabled] == "true",
+		AlipayPollTiers:         parseAlipayPollTiers(vals[SettingAlipayPollTiers]),
+		AlipayPollStartDelaySec: pcParseInt(vals[SettingAlipayPollStartDelay], defaultAlipayPollStartDelaySec),
+		AlipayPollIntervalSec:   pcParseInt(vals[SettingAlipayPollInterval], defaultAlipayPollIntervalSec),
+		AlipayPollTimeoutSec:    pcParseInt(vals[SettingAlipayPollTimeout], defaultAlipayPollTimeoutSec),
+
+		AlipayPollBaseURL:  pcParseStrOrDefault(vals[SettingAlipayPollBaseURL], defaultAlipayPollBaseURL),
+		AlipayPollChatPath: pcParseStrOrDefault(vals[SettingAlipayPollChatPath], defaultAlipayPollChatPath),
+		AlipayPollUserID:   pcParseStrOrDefault(vals[SettingAlipayPollUserID], defaultAlipayPollUserID),
+		AlipayPollNote:     pcParseStrOrDefault(vals[SettingAlipayPollNote], defaultAlipayPollNote),
+	}
+	if cfg.AlipayPollStartDelaySec <= 0 {
+		cfg.AlipayPollStartDelaySec = defaultAlipayPollStartDelaySec
+	}
+	if cfg.AlipayPollIntervalSec <= 0 {
+		cfg.AlipayPollIntervalSec = defaultAlipayPollIntervalSec
+	}
+	if cfg.AlipayPollTimeoutSec <= 0 {
+		cfg.AlipayPollTimeoutSec = defaultAlipayPollTimeoutSec
 	}
 	cfg.AlipayMobilePrecreateDeepLink = pcEnvBoolOverride(
 		SettingAlipayMobilePrecreateDeepLink,
@@ -283,6 +421,64 @@ func (s *PaymentConfigService) parsePaymentConfig(vals map[string]string) *Payme
 		cfg.EnabledTypes = NormalizeVisibleMethods(types)
 	}
 	return cfg
+}
+
+// parseAlipayPollTiers 解析档位 JSON 数组；非法内容一律视为空档位列表。
+func parseAlipayPollTiers(raw string) []AlipayPollTier {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var tiers []AlipayPollTier
+	if err := json.Unmarshal([]byte(raw), &tiers); err != nil {
+		return nil
+	}
+	out := make([]AlipayPollTier, 0, len(tiers))
+	for _, t := range tiers {
+		if t.Price <= 0 || t.Credit <= 0 {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
+// AlipayPollCredentials returns the write-only agent credentials required to
+// create Alipay QR codes and query order status. It is never exposed to users.
+func (s *PaymentConfigService) AlipayPollCredentials(ctx context.Context) (*AlipayPollCredentials, error) {
+	vals, err := s.settingRepo.GetMultiple(ctx, []string{SettingAlipayPollAPIKey, SettingAlipayPollAgentID})
+	if err != nil {
+		return nil, fmt.Errorf("get alipay poll credentials: %w", err)
+	}
+	creds := &AlipayPollCredentials{
+		APIKey:  strings.TrimSpace(vals[SettingAlipayPollAPIKey]),
+		AgentID: strings.TrimSpace(vals[SettingAlipayPollAgentID]),
+	}
+	if creds.APIKey == "" || creds.AgentID == "" {
+		return nil, infraerrors.ServiceUnavailable("ALIPAY_POLL_NOT_CONFIGURED", "alipay poll recharge is not configured")
+	}
+	return creds, nil
+}
+
+// AlipayPollConfigured reports whether both credential fields are present,
+// without failing when they are missing.
+func (s *PaymentConfigService) AlipayPollConfigured(ctx context.Context) bool {
+	_, err := s.AlipayPollCredentials(ctx)
+	return err == nil
+}
+
+// AlipayPollCredentialValues returns the stored credentials verbatim (empty
+// strings when unset). Only the admin settings endpoint may use this — it exists
+// so admins can edit the write-only ApiKey / AgentID fields.
+func (s *PaymentConfigService) AlipayPollCredentialValues(ctx context.Context) AlipayPollCredentials {
+	vals, err := s.settingRepo.GetMultiple(ctx, []string{SettingAlipayPollAPIKey, SettingAlipayPollAgentID})
+	if err != nil {
+		return AlipayPollCredentials{}
+	}
+	return AlipayPollCredentials{
+		APIKey:  strings.TrimSpace(vals[SettingAlipayPollAPIKey]),
+		AgentID: strings.TrimSpace(vals[SettingAlipayPollAgentID]),
+	}
 }
 
 func pcEnvBoolOverride(key string, fallback bool) bool {
@@ -413,6 +609,44 @@ func (s *PaymentConfigService) UpdatePaymentConfig(ctx context.Context, req Upda
 	if req.AlipayMobilePrecreateDeepLink != nil {
 		m[SettingAlipayMobilePrecreateDeepLink] = formatBoolOrEmpty(req.AlipayMobilePrecreateDeepLink)
 	}
+	if req.AlipayPollEnabled != nil {
+		m[SettingAlipayPollEnabled] = formatBoolOrEmpty(req.AlipayPollEnabled)
+	}
+	if req.AlipayPollTiers != nil {
+		encoded, err := formatAlipayPollTiers(*req.AlipayPollTiers)
+		if err != nil {
+			return err
+		}
+		m[SettingAlipayPollTiers] = encoded
+	}
+	if req.AlipayPollAPIKey != nil {
+		m[SettingAlipayPollAPIKey] = strings.TrimSpace(*req.AlipayPollAPIKey)
+	}
+	if req.AlipayPollAgentID != nil {
+		m[SettingAlipayPollAgentID] = strings.TrimSpace(*req.AlipayPollAgentID)
+	}
+	if req.AlipayPollStartDelaySec != nil {
+		m[SettingAlipayPollStartDelay] = formatPositiveInt(req.AlipayPollStartDelaySec)
+	}
+	if req.AlipayPollIntervalSec != nil {
+		m[SettingAlipayPollInterval] = formatPositiveInt(req.AlipayPollIntervalSec)
+	}
+	if req.AlipayPollTimeoutSec != nil {
+		m[SettingAlipayPollTimeout] = formatPositiveInt(req.AlipayPollTimeoutSec)
+	}
+	// 端点参数留空即落回默认值，避免存成空串导致调用地址拼不出来。
+	if req.AlipayPollBaseURL != nil {
+		m[SettingAlipayPollBaseURL] = strings.TrimSpace(*req.AlipayPollBaseURL)
+	}
+	if req.AlipayPollChatPath != nil {
+		m[SettingAlipayPollChatPath] = strings.TrimSpace(*req.AlipayPollChatPath)
+	}
+	if req.AlipayPollUserID != nil {
+		m[SettingAlipayPollUserID] = strings.TrimSpace(*req.AlipayPollUserID)
+	}
+	if req.AlipayPollNote != nil {
+		m[SettingAlipayPollNote] = strings.TrimSpace(*req.AlipayPollNote)
+	}
 	if req.VisibleMethodAlipaySource != nil {
 		m[SettingPaymentVisibleMethodAlipaySource] = derefStr(req.VisibleMethodAlipaySource)
 	}
@@ -426,6 +660,26 @@ func (s *PaymentConfigService) UpdatePaymentConfig(ctx context.Context, req Upda
 		m[SettingPaymentVisibleMethodWxpayEnabled] = formatBoolOrEmpty(req.VisibleMethodWxpayEnabled)
 	}
 	return s.settingRepo.SetMultiple(ctx, m)
+}
+
+// formatAlipayPollTiers 校验并序列化档位列表。每个档位必须实付金额、到账额度均为正数。
+func formatAlipayPollTiers(tiers []AlipayPollTier) (string, error) {
+	if len(tiers) == 0 {
+		return "[]", nil
+	}
+	for _, t := range tiers {
+		if math.IsNaN(t.Price) || math.IsInf(t.Price, 0) || t.Price <= 0 {
+			return "", infraerrors.BadRequest("INVALID_ALIPAY_POLL_TIER", "tier price must be a positive number")
+		}
+		if math.IsNaN(t.Credit) || math.IsInf(t.Credit, 0) || t.Credit <= 0 {
+			return "", infraerrors.BadRequest("INVALID_ALIPAY_POLL_TIER", "tier credit must be a positive number")
+		}
+	}
+	encoded, err := json.Marshal(tiers)
+	if err != nil {
+		return "", infraerrors.BadRequest("INVALID_ALIPAY_POLL_TIER", "alipay poll tiers are not serialisable")
+	}
+	return string(encoded), nil
 }
 
 func formatBoolOrEmpty(v *bool) string {
@@ -510,6 +764,14 @@ func pcParseInt(s string, defaultVal int) int {
 		return defaultVal
 	}
 	return v
+}
+
+// pcParseStrOrDefault 返回去空白后的值，为空时回落到默认值。
+func pcParseStrOrDefault(s, defaultVal string) string {
+	if v := strings.TrimSpace(s); v != "" {
+		return v
+	}
+	return defaultVal
 }
 
 func buildVisibleMethodSourceAvailability(instances []*dbent.PaymentProviderInstance) map[string]bool {

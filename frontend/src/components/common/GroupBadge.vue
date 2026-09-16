@@ -13,8 +13,8 @@
     <span v-if="showLabel" :class="labelClass">
       <template v-if="hasCustomRate">
         <!-- 原倍率删除线 + 专属倍率高亮 -->
-        <span class="line-through opacity-50 mr-0.5">{{ rateMultiplier }}x</span>
-        <span class="font-bold">{{ userRateMultiplier }}x</span>
+        <span class="line-through opacity-50 mr-0.5">{{ displayRateMultiplier }}x</span>
+        <span class="font-bold">{{ displayUserRateMultiplier }}x</span>
       </template>
       <template v-else>
         {{ labelText }}
@@ -52,6 +52,11 @@ interface Props {
    * 只关心费率、不关心有效期的场景）。
    */
   alwaysShowRate?: boolean
+  /**
+   * 显示倍率的缩放系数（仅影响展示，不改变数据）。
+   * 例如传入 0.1 时，倍率 2 会显示为 0.2x。
+   */
+  rateScale?: number
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -60,7 +65,8 @@ const props = withDefaults(defineProps<Props>(), {
   daysRemaining: null,
   userRateMultiplier: null,
   peakRateEnabled: false,
-  alwaysShowRate: false
+  alwaysShowRate: false,
+  rateScale: 1
 })
 
 const { t } = useI18n()
@@ -75,6 +81,24 @@ const hasCustomRate = computed(() => {
     props.rateMultiplier !== undefined &&
     props.userRateMultiplier !== props.rateMultiplier
   )
+})
+
+// 对倍率应用缩放系数，消除浮点误差（如 1.5 * 0.1 的尾数）
+function scaleRate(value: number, scale: number): number {
+  if (scale === 1) return value
+  return Math.round(value * scale * 1e8) / 1e8
+}
+
+// 展示用的默认倍率（已应用 rateScale）
+const displayRateMultiplier = computed(() => {
+  if (props.rateMultiplier === undefined) return undefined
+  return scaleRate(props.rateMultiplier, props.rateScale)
+})
+
+// 展示用的专属倍率（已应用 rateScale）
+const displayUserRateMultiplier = computed(() => {
+  if (props.userRateMultiplier === null || props.userRateMultiplier === undefined) return null
+  return scaleRate(props.userRateMultiplier, props.rateScale)
 })
 
 const appStore = useAppStore()
@@ -110,7 +134,7 @@ const showLabel = computed(() => {
 
 // Label text
 const labelText = computed(() => {
-  const rateLabel = props.rateMultiplier !== undefined ? `${props.rateMultiplier}x` : ''
+  const rateLabel = displayRateMultiplier.value !== undefined ? `${displayRateMultiplier.value}x` : ''
   if (isSubscription.value && !props.alwaysShowRate) {
     // 如果有剩余天数，显示天数
     if (props.daysRemaining !== null && props.daysRemaining !== undefined) {

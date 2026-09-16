@@ -28,11 +28,11 @@
         <!-- Rate pill (platform color) -->
         <span v-if="rateMultiplier !== undefined" :class="['inline-flex items-center whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold', ratePillClass]">
           <template v-if="hasCustomRate">
-            <span class="mr-1 line-through opacity-50">{{ rateMultiplier }}x</span>
-            <span class="font-bold">{{ userRateMultiplier }}x</span>
+            <span class="mr-1 line-through opacity-50">{{ displayRateMultiplier }}x</span>
+            <span class="font-bold">{{ displayUserRateMultiplier }}x</span>
           </template>
           <template v-else>
-            {{ rateMultiplier }}x {{ t('admin.groups.rateLabel') }}
+            {{ displayRateMultiplier }}x {{ t('admin.groups.rateLabel') }}
           </template>
         </span>
         <span
@@ -81,6 +81,8 @@ interface Props {
   description?: string | null
   selected?: boolean
   showCheckmark?: boolean
+  /** 显示倍率的缩放系数（仅影响展示，不改变数据）。例如 0.1 时倍率 2 显示为 0.2x。 */
+  rateScale?: number
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -88,7 +90,8 @@ const props = withDefaults(defineProps<Props>(), {
   selected: false,
   showCheckmark: true,
   userRateMultiplier: null,
-  peakRateEnabled: false
+  peakRateEnabled: false,
+  rateScale: 1
 })
 
 // Whether user has a custom rate different from default
@@ -99,6 +102,24 @@ const hasCustomRate = computed(() => {
     props.rateMultiplier !== undefined &&
     props.userRateMultiplier !== props.rateMultiplier
   )
+})
+
+// 对倍率应用缩放系数，消除浮点误差（如 1.5 * 0.1 的尾数）
+function scaleRate(value: number, scale: number): number {
+  if (scale === 1) return value
+  return Math.round(value * scale * 1e8) / 1e8
+}
+
+// 展示用的默认倍率（已应用 rateScale）
+const displayRateMultiplier = computed(() => {
+  if (props.rateMultiplier === undefined) return undefined
+  return scaleRate(props.rateMultiplier, props.rateScale)
+})
+
+// 展示用的专属倍率（已应用 rateScale）
+const displayUserRateMultiplier = computed(() => {
+  if (props.userRateMultiplier === null || props.userRateMultiplier === undefined) return null
+  return scaleRate(props.userRateMultiplier, props.rateScale)
 })
 
 const appStore = useAppStore()

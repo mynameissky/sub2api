@@ -8178,6 +8178,269 @@
                     </div>
                   </div>
                 </div>
+                <!-- Row 7: Alipay poll recharge (agent-generated QR + polling) -->
+                <div
+                  class="rounded-lg border border-gray-200 p-4 dark:border-dark-700"
+                >
+                  <div class="flex items-start justify-between gap-4">
+                    <div class="min-w-0">
+                      <label class="input-label mb-0">{{
+                        t("admin.settings.payment.alipayPollEnabled")
+                      }}</label>
+                      <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                        {{ t("admin.settings.payment.alipayPollHint") }}
+                      </p>
+                    </div>
+                    <Toggle v-model="form.payment_alipay_poll_enabled" />
+                  </div>
+
+                  <template v-if="form.payment_alipay_poll_enabled">
+                    <!-- Tier editor -->
+                    <div class="mt-4">
+                      <div class="flex items-center justify-between">
+                        <label class="input-label mb-0">{{
+                          t("admin.settings.payment.alipayPollTiers")
+                        }}</label>
+                        <button
+                          type="button"
+                          class="btn btn-secondary btn-sm"
+                          @click="addAlipayPollTier"
+                        >
+                          {{ t("admin.settings.payment.alipayPollTierAdd") }}
+                        </button>
+                      </div>
+                      <p
+                        v-if="!form.payment_alipay_poll_tiers.length"
+                        class="mt-2 text-xs text-gray-400 dark:text-gray-500"
+                      >
+                        {{ t("admin.settings.payment.alipayPollTiersEmpty") }}
+                      </p>
+                      <div
+                        v-for="(tier, index) in form.payment_alipay_poll_tiers"
+                        :key="index"
+                        class="mt-2 flex items-center gap-2"
+                      >
+                        <input
+                          :value="tier.price"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          class="input flex-1"
+                          :placeholder="
+                            t('admin.settings.payment.alipayPollTierPrice')
+                          "
+                          @input="
+                            updateAlipayPollTier(
+                              index,
+                              'price',
+                              ($event.target as HTMLInputElement).value,
+                            )
+                          "
+                        />
+                        <span class="text-gray-400 dark:text-gray-500">→</span>
+                        <input
+                          :value="tier.credit"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          class="input flex-1"
+                          :placeholder="
+                            t('admin.settings.payment.alipayPollTierCredit')
+                          "
+                          @input="
+                            updateAlipayPollTier(
+                              index,
+                              'credit',
+                              ($event.target as HTMLInputElement).value,
+                            )
+                          "
+                        />
+                        <button
+                          type="button"
+                          class="btn btn-secondary btn-sm shrink-0"
+                          @click="removeAlipayPollTier(index)"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </div>
+
+                    <!-- Credentials (write-only, never returned to users) -->
+                    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div>
+                        <label class="input-label">{{
+                          t("admin.settings.payment.alipayPollApiKey")
+                        }}</label>
+                        <input
+                          v-model="form.payment_alipay_poll_api_key"
+                          type="password"
+                          autocomplete="new-password"
+                          class="input"
+                        />
+                        <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                          {{ t("admin.settings.payment.alipayPollApiKeyHint") }}
+                        </p>
+                      </div>
+                      <div>
+                        <label class="input-label">{{
+                          t("admin.settings.payment.alipayPollAgentId")
+                        }}</label>
+                        <input
+                          v-model="form.payment_alipay_poll_agent_id"
+                          type="text"
+                          autocomplete="off"
+                          class="input"
+                        />
+                        <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                          {{ t("admin.settings.payment.alipayPollAgentIdHint") }}
+                        </p>
+                      </div>
+                    </div>
+
+                    <!-- Polling timing -->
+                    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                      <div>
+                        <label class="input-label">{{
+                          t("admin.settings.payment.alipayPollStartDelaySec")
+                        }}</label>
+                        <input
+                          v-model.number="form.payment_alipay_poll_start_delay_sec"
+                          type="number"
+                          min="1"
+                          class="input"
+                        />
+                        <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                          {{
+                            t(
+                              "admin.settings.payment.alipayPollStartDelaySecHint",
+                            )
+                          }}
+                        </p>
+                      </div>
+                      <div>
+                        <label class="input-label">{{
+                          t("admin.settings.payment.alipayPollIntervalSec")
+                        }}</label>
+                        <input
+                          v-model.number="form.payment_alipay_poll_interval_sec"
+                          type="number"
+                          min="1"
+                          class="input"
+                        />
+                        <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                          {{
+                            t("admin.settings.payment.alipayPollIntervalSecHint")
+                          }}
+                        </p>
+                      </div>
+                      <div>
+                        <label class="input-label">{{
+                          t("admin.settings.payment.alipayPollTimeoutSec")
+                        }}</label>
+                        <input
+                          v-model.number="form.payment_alipay_poll_timeout_sec"
+                          type="number"
+                          min="1"
+                          class="input"
+                        />
+                        <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                          {{
+                            t("admin.settings.payment.alipayPollTimeoutSecHint")
+                          }}
+                        </p>
+                      </div>
+                    </div>
+
+                    <!-- Agent endpoint & prompt parameters -->
+                    <div
+                      class="mt-4 border-t border-gray-200 pt-4 dark:border-dark-700"
+                    >
+                      <label class="input-label mb-0">{{
+                        t("admin.settings.payment.alipayPollEndpoint")
+                      }}</label>
+                      <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                        {{ t("admin.settings.payment.alipayPollEndpointHint") }}
+                      </p>
+                      <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div>
+                          <label class="input-label">{{
+                            t("admin.settings.payment.alipayPollBaseURL")
+                          }}</label>
+                          <input
+                            v-model="form.payment_alipay_poll_base_url"
+                            type="text"
+                            autocomplete="off"
+                            spellcheck="false"
+                            class="input"
+                            placeholder="https://o.tbox.cn"
+                          />
+                          <p
+                            class="mt-1 text-xs text-gray-400 dark:text-gray-500"
+                          >
+                            {{
+                              t("admin.settings.payment.alipayPollBaseURLHint")
+                            }}
+                          </p>
+                        </div>
+                        <div>
+                          <label class="input-label">{{
+                            t("admin.settings.payment.alipayPollChatPath")
+                          }}</label>
+                          <input
+                            v-model="form.payment_alipay_poll_chat_path"
+                            type="text"
+                            autocomplete="off"
+                            spellcheck="false"
+                            class="input"
+                            placeholder="/openapi/v1/chat/create"
+                          />
+                          <p
+                            class="mt-1 text-xs text-gray-400 dark:text-gray-500"
+                          >
+                            {{
+                              t("admin.settings.payment.alipayPollChatPathHint")
+                            }}
+                          </p>
+                        </div>
+                        <div>
+                          <label class="input-label">{{
+                            t("admin.settings.payment.alipayPollUserID")
+                          }}</label>
+                          <input
+                            v-model="form.payment_alipay_poll_user_id"
+                            type="text"
+                            autocomplete="off"
+                            spellcheck="false"
+                            class="input"
+                            placeholder="sub2api_alipay_qr_client"
+                          />
+                          <p
+                            class="mt-1 text-xs text-gray-400 dark:text-gray-500"
+                          >
+                            {{ t("admin.settings.payment.alipayPollUserIDHint") }}
+                          </p>
+                        </div>
+                        <div>
+                          <label class="input-label">{{
+                            t("admin.settings.payment.alipayPollNote")
+                          }}</label>
+                          <input
+                            v-model="form.payment_alipay_poll_note"
+                            type="text"
+                            autocomplete="off"
+                            class="input"
+                            placeholder="FaithAPI充值"
+                          />
+                          <p
+                            class="mt-1 text-xs text-gray-400 dark:text-gray-500"
+                          >
+                            {{ t("admin.settings.payment.alipayPollNoteHint") }}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+                </div>
                 <!-- Row 4: Enabled payment types (provider badges like sub2apipay) -->
                 <div>
                   <label class="input-label">{{
@@ -8800,6 +9063,7 @@ import type {
   DefaultSubscriptionSetting,
   DefaultPlatformQuotasMap,
   OpenAIFastPolicyRule,
+  PaymentAlipayPollTier,
   WeChatConnectMode,
   WebSearchEmulationConfig,
   WebSearchProviderConfig,
@@ -9535,6 +9799,18 @@ type SettingsForm = Omit<
   // 系统全局平台限额 map；form 内始终归一化为全 4 平台对象（模板非空绑定依赖此不变量）
   default_platform_quotas: DefaultPlatformQuotasMap;
   account_scheduling_thresholds: ReturnType<typeof normalizeAccountSchedulingThresholdsMap>;
+  // 支付宝轮询充值：form 内始终为具体值（SystemSettings 标记为可选）
+  payment_alipay_poll_enabled: boolean;
+  payment_alipay_poll_tiers: PaymentAlipayPollTier[];
+  payment_alipay_poll_api_key: string;
+  payment_alipay_poll_agent_id: string;
+  payment_alipay_poll_start_delay_sec: number;
+  payment_alipay_poll_interval_sec: number;
+  payment_alipay_poll_timeout_sec: number;
+  payment_alipay_poll_base_url: string;
+  payment_alipay_poll_chat_path: string;
+  payment_alipay_poll_user_id: string;
+  payment_alipay_poll_note: string;
 };
 
 const schedulingThresholdPlatforms = SCHEDULING_THRESHOLD_PLATFORMS;
@@ -9608,6 +9884,17 @@ const form = reactive<SettingsForm>({
   payment_cancel_rate_limit_window_mode: "rolling",
   payment_alipay_force_qrcode: false,
   payment_alipay_mobile_precreate_deep_link: false,
+  payment_alipay_poll_enabled: false,
+  payment_alipay_poll_tiers: [] as PaymentAlipayPollTier[],
+  payment_alipay_poll_api_key: "",
+  payment_alipay_poll_agent_id: "",
+  payment_alipay_poll_start_delay_sec: 30,
+  payment_alipay_poll_interval_sec: 5,
+  payment_alipay_poll_timeout_sec: 600,
+  payment_alipay_poll_base_url: "https://o.tbox.cn",
+  payment_alipay_poll_chat_path: "/openapi/v1/chat/create",
+  payment_alipay_poll_user_id: "sub2api_alipay_qr_client",
+  payment_alipay_poll_note: "FaithAPI充值",
   table_default_page_size: tablePageSizeDefault,
   table_page_size_options: [10, 20, 50, 100],
   custom_menu_items: [] as Array<{
@@ -10838,6 +11125,36 @@ async function loadSettings() {
       settings.account_scheduling_thresholds,
     );
     form.backend_mode_enabled = settings.backend_mode_enabled;
+    // 支付宝轮询充值：档位必须为数组，数字字段缺失时回落到后端默认值
+    form.payment_alipay_poll_enabled = Boolean(
+      settings.payment_alipay_poll_enabled,
+    );
+    form.payment_alipay_poll_tiers = Array.isArray(
+      settings.payment_alipay_poll_tiers,
+    )
+      ? settings.payment_alipay_poll_tiers.map((tier) => ({
+          price: Number(tier?.price) || 0,
+          credit: Number(tier?.credit) || 0,
+        }))
+      : [];
+    form.payment_alipay_poll_api_key = settings.payment_alipay_poll_api_key || "";
+    form.payment_alipay_poll_agent_id =
+      settings.payment_alipay_poll_agent_id || "";
+    form.payment_alipay_poll_start_delay_sec =
+      Number(settings.payment_alipay_poll_start_delay_sec) || 30;
+    form.payment_alipay_poll_interval_sec =
+      Number(settings.payment_alipay_poll_interval_sec) || 5;
+    form.payment_alipay_poll_timeout_sec =
+      Number(settings.payment_alipay_poll_timeout_sec) || 600;
+    // 端点参数：后端已做默认值回落，这里再兜一层空串
+    form.payment_alipay_poll_base_url =
+      settings.payment_alipay_poll_base_url || "https://o.tbox.cn";
+    form.payment_alipay_poll_chat_path =
+      settings.payment_alipay_poll_chat_path || "/openapi/v1/chat/create";
+    form.payment_alipay_poll_user_id =
+      settings.payment_alipay_poll_user_id || "sub2api_alipay_qr_client";
+    form.payment_alipay_poll_note =
+      settings.payment_alipay_poll_note || "FaithAPI充值";
     form.default_subscriptions = normalizeDefaultSubscriptionSettings(
       settings.default_subscriptions,
     );
@@ -11425,6 +11742,26 @@ async function saveSettings() {
       payment_alipay_force_qrcode: form.payment_alipay_force_qrcode,
       payment_alipay_mobile_precreate_deep_link:
         form.payment_alipay_mobile_precreate_deep_link,
+      // 支付宝轮询充值：ApiKey / 智能体ID 为只写字段，仅管理端提交
+      payment_alipay_poll_enabled: form.payment_alipay_poll_enabled,
+      payment_alipay_poll_tiers: form.payment_alipay_poll_tiers.map((tier) => ({
+        price: Number(tier.price) || 0,
+        credit: Number(tier.credit) || 0,
+      })),
+      payment_alipay_poll_api_key: form.payment_alipay_poll_api_key.trim(),
+      payment_alipay_poll_agent_id: form.payment_alipay_poll_agent_id.trim(),
+      payment_alipay_poll_start_delay_sec:
+        Number(form.payment_alipay_poll_start_delay_sec) || 30,
+      payment_alipay_poll_interval_sec:
+        Number(form.payment_alipay_poll_interval_sec) || 5,
+      payment_alipay_poll_timeout_sec:
+        Number(form.payment_alipay_poll_timeout_sec) || 600,
+      // 端点参数：留空即由后端回落到默认值
+      payment_alipay_poll_base_url: form.payment_alipay_poll_base_url.trim(),
+      payment_alipay_poll_chat_path:
+        form.payment_alipay_poll_chat_path.trim(),
+      payment_alipay_poll_user_id: form.payment_alipay_poll_user_id.trim(),
+      payment_alipay_poll_note: form.payment_alipay_poll_note.trim(),
       openai_low_upstream_rate_priority_enabled:
         form.openai_low_upstream_rate_priority_enabled,
       openai_oauth_scheduling_rate_multiplier:
@@ -12222,6 +12559,32 @@ function isPaymentTypeEnabled(type: string): boolean {
 const hasAnyPaymentTypeEnabled = computed(
   () => form.payment_enabled_types.length > 0,
 );
+
+// ---- 支付宝轮询充值档位编辑 ----
+function addAlipayPollTier() {
+  form.payment_alipay_poll_tiers = [
+    ...form.payment_alipay_poll_tiers,
+    { price: 0, credit: 0 },
+  ];
+}
+
+function updateAlipayPollTier(
+  index: number,
+  field: keyof PaymentAlipayPollTier,
+  raw: string,
+) {
+  const value = Number(raw);
+  form.payment_alipay_poll_tiers = form.payment_alipay_poll_tiers.map(
+    (tier, i) =>
+      i === index ? { ...tier, [field]: Number.isFinite(value) ? value : 0 } : tier,
+  );
+}
+
+function removeAlipayPollTier(index: number) {
+  form.payment_alipay_poll_tiers = form.payment_alipay_poll_tiers.filter(
+    (_, i) => i !== index,
+  );
+}
 
 function togglePaymentType(type: string) {
   if (form.payment_enabled_types.includes(type)) {

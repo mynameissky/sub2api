@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -46,7 +47,13 @@ const (
 	topUsersLimit      = 10
 	amountToleranceCNY = 0.01
 
-	orderIDPrefix = "sub2_"
+	// orderIDPrefix 是新订单号的统一前缀（不带下划线），格式 MR + YYYYMMDD + 8位随机串。
+	orderIDPrefix = "MR"
+	// alipayPollOrderIDPrefix 是支付宝轮询充值订单号的独立前缀，格式 MR + 13位毫秒时间戳。
+	// 该通道由智能体生成收款二维码，纯数字订单号更稳妥，故不复用日期+随机串的格式。
+	alipayPollOrderIDPrefix = "MR"
+	// legacyOrderIDPrefix 仅用于解析历史 "sub2_<DBID>" 订单号的回退逻辑。
+	legacyOrderIDPrefix = "sub2_"
 )
 
 const paymentResumeSigningKeyEnv = "PAYMENT_RESUME_SIGNING_KEY"
@@ -54,11 +61,19 @@ const paymentResumeSigningKeyEnv = "PAYMENT_RESUME_SIGNING_KEY"
 // --- Types ---
 
 // generateOutTradeNo creates a unique external order ID for payment providers.
-// Format: sub2_20250409aB3kX9mQ (prefix + date + 8-char random)
+// Format: MR20250409aB3kX9mQ (prefix + date + 8-char random)
 func generateOutTradeNo() string {
 	date := time.Now().Format("20060102")
 	rnd := generateRandomString(8)
 	return orderIDPrefix + date + rnd
+}
+
+// generateAlipayPollOutTradeNo creates the external order ID used by Alipay poll
+// recharge (智能体托管二维码). Format: MR + 13-digit Unix millisecond timestamp,
+// e.g. MR1787910323345. Kept numeric-only because the agent renders this value
+// as 商户订单号 into the payment QR code.
+func generateAlipayPollOutTradeNo() string {
+	return alipayPollOrderIDPrefix + strconv.FormatInt(time.Now().UnixMilli(), 10)
 }
 
 func generateRandomString(n int) string {

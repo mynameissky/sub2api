@@ -11,7 +11,8 @@ import type {
   CheckoutInfoResponse,
   CreateOrderRequest,
   CreateOrderResult,
-  PaymentOrder
+  PaymentOrder,
+  AlipayPollCreateResult
 } from '@/types/payment'
 import type { BasePaginationResponse } from '@/types'
 
@@ -67,6 +68,16 @@ export const paymentAPI = {
   /** Verify order payment status with upstream provider */
   verifyOrder(outTradeNo: string) {
     return apiClient.post<PaymentOrder>('/payment/orders/verify', { out_trade_no: outTradeNo })
+  },
+
+  /** Create an Alipay poll order and generate its QR code via the agent */
+  createAlipayPollOrder(tierIndex: number) {
+    return apiClient.post<AlipayPollCreateResult>('/payment/alipay-poll/orders', { tier_index: tierIndex })
+  },
+
+  /** Poll an Alipay poll order's payment status */
+  verifyAlipayPollOrder(outTradeNo: string) {
+    return apiClient.post<PaymentOrder>('/payment/alipay-poll/orders/verify', { out_trade_no: outTradeNo })
   },
 
   /** Legacy-compatible public order lookup by out_trade_no */

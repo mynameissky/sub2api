@@ -130,6 +130,11 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 	if paymentCfg == nil {
 		paymentCfg = &service.PaymentConfig{}
 	}
+	// 支付宝轮询充值的 ApiKey / 智能体ID 是只写凭证：仅管理员设置接口回显。
+	alipayPollCreds := service.AlipayPollCredentials{}
+	if h.paymentConfigService != nil {
+		alipayPollCreds = h.paymentConfigService.AlipayPollCredentialValues(c.Request.Context())
+	}
 	passkeyConfigured, passkeyRPID, passkeyRPOrigins := h.settingService.PasskeyConfiguration()
 
 	payload := dto.SystemSettings{
@@ -370,6 +375,17 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		PaymentCancelRateLimitMode:                             paymentCfg.CancelRateLimitMode,
 		PaymentAlipayForceQRCode:                               paymentCfg.AlipayForceQRCode,
 		PaymentAlipayMobilePrecreateDeepLink:                   paymentCfg.AlipayMobilePrecreateDeepLink,
+		PaymentAlipayPollEnabled:                               paymentCfg.AlipayPollEnabled,
+		PaymentAlipayPollTiers:                                 alipayPollTiersToDTO(paymentCfg.AlipayPollTiers),
+		PaymentAlipayPollAPIKey:                                alipayPollCreds.APIKey,
+		PaymentAlipayPollAgentID:                               alipayPollCreds.AgentID,
+		PaymentAlipayPollStartDelaySec:                         paymentCfg.AlipayPollStartDelaySec,
+		PaymentAlipayPollIntervalSec:                           paymentCfg.AlipayPollIntervalSec,
+		PaymentAlipayPollTimeoutSec:                            paymentCfg.AlipayPollTimeoutSec,
+		PaymentAlipayPollBaseURL:                               paymentCfg.AlipayPollBaseURL,
+		PaymentAlipayPollChatPath:                              paymentCfg.AlipayPollChatPath,
+		PaymentAlipayPollUserID:                                paymentCfg.AlipayPollUserID,
+		PaymentAlipayPollNote:                                  paymentCfg.AlipayPollNote,
 
 		ChannelMonitorEnabled:                settings.ChannelMonitorEnabled,
 		ChannelMonitorMode:                   settings.ChannelMonitorMode,
@@ -413,6 +429,14 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 }
 
 // openaiFastPolicySettingsToDTO converts service -> dto for OpenAI fast policy.
+// alipayPollTiersToDTO 保证空档位在 JSON 中仍序列化为 []（而不是 null）。
+func alipayPollTiersToDTO(tiers []service.AlipayPollTier) []service.AlipayPollTier {
+	if tiers == nil {
+		return []service.AlipayPollTier{}
+	}
+	return tiers
+}
+
 func openaiFastPolicySettingsToDTO(s *service.OpenAIFastPolicySettings) *dto.OpenAIFastPolicySettings {
 	if s == nil {
 		return nil

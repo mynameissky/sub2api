@@ -141,6 +141,12 @@ export interface WeChatConnectModeOption {
   labelEn: string;
 }
 
+/** 支付宝轮询充值的档位：实付金额（¥）与到账额度 */
+export interface PaymentAlipayPollTier {
+  price: number;
+  credit: number;
+}
+
 const AUTH_SOURCE_TYPES: AuthSourceType[] = [
   "email",
   "linuxdo",
@@ -680,6 +686,21 @@ export interface SystemSettings {
   payment_visible_method_wxpay_source?: string;
   payment_visible_method_alipay_enabled?: boolean;
   payment_visible_method_wxpay_enabled?: boolean;
+  /** 支付宝轮询充值（智能体生成二维码 + 轮询查单） */
+  payment_alipay_poll_enabled?: boolean;
+  payment_alipay_poll_tiers?: PaymentAlipayPollTier[];
+  /** 只写字段：仅管理端回显用于编辑，用户侧接口不返回 */
+  payment_alipay_poll_api_key?: string;
+  /** 只写字段：仅管理端回显用于编辑，用户侧接口不返回 */
+  payment_alipay_poll_agent_id?: string;
+  payment_alipay_poll_start_delay_sec?: number;
+  payment_alipay_poll_interval_sec?: number;
+  payment_alipay_poll_timeout_sec?: number;
+  /** 智能体端点与提示词参数（留空即回落到默认值，不下发给用户） */
+  payment_alipay_poll_base_url?: string;
+  payment_alipay_poll_chat_path?: string;
+  payment_alipay_poll_user_id?: string;
+  payment_alipay_poll_note?: string;
   openai_low_upstream_rate_priority_enabled?: boolean;
   openai_oauth_scheduling_rate_multiplier?: number;
   openai_advanced_scheduler_enabled?: boolean;
@@ -994,6 +1015,21 @@ export interface UpdateSettingsRequest {
   payment_visible_method_wxpay_source?: string;
   payment_visible_method_alipay_enabled?: boolean;
   payment_visible_method_wxpay_enabled?: boolean;
+  /** 支付宝轮询充值（智能体生成二维码 + 轮询查单） */
+  payment_alipay_poll_enabled?: boolean;
+  payment_alipay_poll_tiers?: PaymentAlipayPollTier[];
+  /** 只写字段：仅管理端回显用于编辑，用户侧接口不返回 */
+  payment_alipay_poll_api_key?: string;
+  /** 只写字段：仅管理端回显用于编辑，用户侧接口不返回 */
+  payment_alipay_poll_agent_id?: string;
+  payment_alipay_poll_start_delay_sec?: number;
+  payment_alipay_poll_interval_sec?: number;
+  payment_alipay_poll_timeout_sec?: number;
+  /** 智能体端点与提示词参数（留空即回落到默认值，不下发给用户） */
+  payment_alipay_poll_base_url?: string;
+  payment_alipay_poll_chat_path?: string;
+  payment_alipay_poll_user_id?: string;
+  payment_alipay_poll_note?: string;
   openai_low_upstream_rate_priority_enabled?: boolean;
   openai_oauth_scheduling_rate_multiplier?: number;
   openai_advanced_scheduler_enabled?: boolean;
