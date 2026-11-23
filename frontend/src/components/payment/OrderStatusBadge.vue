@@ -10,19 +10,31 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { OrderStatus } from '@/types/payment'
 
 const props = defineProps<{
-  status: OrderStatus
+  status: string
 }>()
 
 const { t } = useI18n()
 
-const statusMap: Record<OrderStatus, { key: string; class: string }> = {
+const SUCCESS_CLASS = 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+const UNKNOWN_CLASS = 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400'
+
+/** 大小写与首尾空白不影响匹配（如客服手动充值直接落库的 SUCCESS） */
+function normalizeStatus(status: string): string {
+  return String(status ?? '').trim().toUpperCase()
+}
+
+/** 与已完成等价的原始状态值，统一按成功展示 */
+const statusAliases: Record<string, string> = {
+  SUCCESS: 'COMPLETED',
+}
+
+const statusMap: Record<string, { key: string; class: string }> = {
   PENDING: { key: 'payment.status.pending', class: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' },
   PAID: { key: 'payment.status.paid', class: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' },
   RECHARGING: { key: 'payment.status.recharging', class: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' },
-  COMPLETED: { key: 'payment.status.completed', class: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' },
+  COMPLETED: { key: 'payment.status.completed', class: SUCCESS_CLASS },
   EXPIRED: { key: 'payment.status.expired', class: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400' },
   CANCELLED: { key: 'payment.status.cancelled', class: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400' },
   FAILED: { key: 'payment.status.failed', class: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' },
@@ -34,13 +46,15 @@ const statusMap: Record<OrderStatus, { key: string; class: string }> = {
   REFUND_FAILED: { key: 'payment.status.refund_failed', class: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' },
 }
 
+const statusEntry = computed(() => {
+  const normalized = normalizeStatus(props.status)
+  return statusMap[statusAliases[normalized] ?? normalized]
+})
+
 const statusLabel = computed(() => {
-  const entry = statusMap[props.status]
+  const entry = statusEntry.value
   return entry ? t(entry.key) : props.status
 })
 
-const statusClass = computed(() => {
-  const entry = statusMap[props.status]
-  return entry?.class ?? 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400'
-})
+const statusClass = computed(() => statusEntry.value?.class ?? UNKNOWN_CLASS)
 </script>

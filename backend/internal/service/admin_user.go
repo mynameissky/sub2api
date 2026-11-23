@@ -13,6 +13,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
 	"github.com/Wei-Shaw/sub2api/ent/authidentitychannel"
+	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -513,7 +514,10 @@ func (s *adminServiceImpl) BatchUpdateLimits(ctx context.Context, userIDs []int6
 	return affected, nil
 }
 
-func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, balance float64, operation string, notes string) (*User, error) {
+// UpdateUserBalance 调整用户余额。
+// payAmount 非空且为正时，说明这是一笔来自「扫码人工充值」的手动充值：
+// 除余额调整外还会补落一笔已支付订单（见 createManualRechargeOrder）。
+func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, balance float64, operation string, notes string, payAmount *float64) (*User, error) {
 	// 余额调整必须走原子接口：先读后整行写回会把并发的计费扣款覆盖掉。
 	var (
 		change BalanceChange
@@ -546,6 +550,15 @@ func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, 
 		s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, userID)
 	}
 	s.tryAccrueAffiliateRebateForAdminRecharge(ctx, userID, operation, balance)
+
+	// 扫码人工充值：管理员手动充值带上实付金额时，额外补落一笔已支付订单，
+	// 让用户能在「我的订单」中看到这笔线下充值。落单失败不回滚余额——
+	// 余额调整才是本次操作的主体，订单只是留痕。
+	if operation == "add" && balance > 0 && payAmount != nil && *payAmount > 0 {
+		if orderErr := s.createManualRechargeOrder(ctx, user, balance, *payAmount, notes); orderErr != nil {
+			logger.LegacyPrintf("service.admin", "create manual recharge order failed: user_id=%d err=%v", userID, orderErr)
+		}
+	}
 
 	if s.billingCacheService != nil {
 		go func() {
@@ -581,6 +594,52 @@ func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, 
 	}
 
 	return user, nil
+}
+
+// manualRechargeSrcHost 标识由管理员手动充值生成的订单。
+const manualRechargeSrcHost = "admin-manual"
+
+// createManualRechargeOrder 为管理员手动充值补落一笔已支付订单。
+// 扫码人工充值在用户侧没有下单流程：系统不为它创建 PENDING 订单，
+// 订单只在这里反向生成，状态直接是已支付，不经过履约管线。
+func (s *adminServiceImpl) createManualRechargeOrder(ctx context.Context, user *User, creditAmount, payAmount float64, notes string) error {
+	if s.entClient == nil || user == nil || payAmount <= 0 {
+		return nil
+	}
+	now := time.Now()
+	builder := s.entClient.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetNillableUserNotes(psNilIfEmpty(user.Notes)).
+		SetAmount(creditAmount).
+		SetPayAmount(payAmount).
+		// 差额即「手续费/优惠」，可正可负。
+		SetFeeRate((creditAmount - payAmount) / payAmount).
+		SetRechargeCode("").
+		// 注意：与 payment_service.go 的 orderIDPrefix 同为 "MR" 但格式不同
+		// （常规订单是 MR+YYYYMMDD+随机串，这里是 MR+unix秒+userID）。
+		// 订单号在解析侧只当不透明字符串用，故保持现状。
+		SetOutTradeNo(fmt.Sprintf("MR%d%d", now.Unix(), user.ID)).
+		// 线下扫码没有真实第三方，payment_type 固定为 alipay。
+		SetPaymentType(string(payment.TypeAlipay)).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusCompleted).
+		SetExpiresAt(now.Add(24 * time.Hour)).
+		SetPaidAt(now).
+		SetClientIP("127.0.0.1").
+		SetSrcHost(manualRechargeSrcHost).
+		SetCreatedAt(now).
+		SetUpdatedAt(now)
+	if trimmed := strings.TrimSpace(notes); trimmed != "" {
+		// 复用 refund_reason 存管理员备注：订单表没有通用的备注字段。
+		builder.SetRefundReason(trimmed)
+	}
+	if _, err := builder.Save(ctx); err != nil {
+		return fmt.Errorf("create manual recharge order: %w", err)
+	}
+	return nil
 }
 
 func (s *adminServiceImpl) tryAccrueAffiliateRebateForAdminRecharge(ctx context.Context, userID int64, operation string, amount float64) {

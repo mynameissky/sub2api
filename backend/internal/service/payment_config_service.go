@@ -58,6 +58,13 @@ const (
 	SettingAlipayPollChatPath = "ALIPAY_POLL_CHAT_PATH"
 	SettingAlipayPollUserID   = "ALIPAY_POLL_USER_ID"
 	SettingAlipayPollNote     = "ALIPAY_POLL_NOTE"
+
+	// 扫码人工充值：固定档位 + 客服二维码，付款后由客服人工到账。
+	// 本功能没有需要保密的凭证，客服二维码需要下发给用户，因此属于 PaymentConfig。
+	SettingManualRechargeEnabled = "MANUAL_RECHARGE_ENABLED"
+	SettingManualRechargeTiers   = "MANUAL_RECHARGE_TIERS" // JSON array of ManualRechargeTier
+	SettingManualCSQRImage       = "MANUAL_CS_QR_IMAGE"    // customer-service QR image (data URL)
+	SettingManualCSHelpText      = "MANUAL_CS_HELP_TEXT"
 )
 
 // Default values for the Alipay poll recharge settings.
@@ -78,6 +85,14 @@ const (
 type AlipayPollTier struct {
 	Price  float64 `json:"price"`  // 实付金额（¥，作为支付宝收款金额传给智能体）
 	Credit float64 `json:"credit"` // 到账额度（支付成功后充值到余额）
+}
+
+// ManualRechargeTier is a fixed-price offline recharge option: user pays Price
+// (in CNY) by scanning QRImage, and after CS confirmation gets Credit balance.
+type ManualRechargeTier struct {
+	Price   float64 `json:"price"`    // 实付金额（¥）
+	Credit  float64 `json:"credit"`   // 到账额度
+	QRImage string  `json:"qr_image"` // 该档位收款二维码（data URL 或自有图片端点 URL）
 }
 
 // AlipayPollCredentials holds the write-only agent credentials used to
@@ -141,6 +156,13 @@ type PaymentConfig struct {
 	AlipayPollChatPath string `json:"-"`
 	AlipayPollUserID   string `json:"-"`
 	AlipayPollNote     string `json:"-"`
+
+	// 扫码人工充值。开启后用户端充值页独占为「扫码充值」，
+	// 档位二维码与客服二维码在用户侧接口中已换成图片端点 URL。
+	ManualRechargeEnabled bool                 `json:"manual_recharge_enabled"`
+	ManualRechargeTiers   []ManualRechargeTier `json:"manual_recharge_tiers"`
+	ManualCSQRImage       string               `json:"manual_cs_qr_image"`
+	ManualCSHelpText      string               `json:"manual_cs_help_text"`
 }
 
 // AlipayPollEndpoint 是调用智能体所需的端点与提示词参数。
@@ -232,6 +254,12 @@ type UpdatePaymentConfigRequest struct {
 	AlipayPollChatPath *string `json:"payment_alipay_poll_chat_path"`
 	AlipayPollUserID   *string `json:"payment_alipay_poll_user_id"`
 	AlipayPollNote     *string `json:"payment_alipay_poll_note"`
+
+	// 扫码人工充值
+	ManualRechargeEnabled *bool                 `json:"payment_manual_recharge_enabled"`
+	ManualRechargeTiers   *[]ManualRechargeTier `json:"payment_manual_recharge_tiers"`
+	ManualCSQRImage       *string               `json:"payment_manual_cs_qr_image"`
+	ManualCSHelpText      *string               `json:"payment_manual_cs_help_text"`
 }
 
 // MethodLimits holds per-payment-type limits.
@@ -345,6 +373,8 @@ func (s *PaymentConfigService) GetPaymentConfig(ctx context.Context) (*PaymentCo
 		SettingAlipayPollEnabled, SettingAlipayPollTiers,
 		SettingAlipayPollStartDelay, SettingAlipayPollInterval, SettingAlipayPollTimeout,
 		SettingAlipayPollBaseURL, SettingAlipayPollChatPath, SettingAlipayPollUserID, SettingAlipayPollNote,
+		SettingManualRechargeEnabled, SettingManualRechargeTiers,
+		SettingManualCSQRImage, SettingManualCSHelpText,
 	}
 	vals, err := s.settingRepo.GetMultiple(ctx, keys)
 	if err != nil {
@@ -393,6 +423,11 @@ func (s *PaymentConfigService) parsePaymentConfig(vals map[string]string) *Payme
 		AlipayPollChatPath: pcParseStrOrDefault(vals[SettingAlipayPollChatPath], defaultAlipayPollChatPath),
 		AlipayPollUserID:   pcParseStrOrDefault(vals[SettingAlipayPollUserID], defaultAlipayPollUserID),
 		AlipayPollNote:     pcParseStrOrDefault(vals[SettingAlipayPollNote], defaultAlipayPollNote),
+
+		ManualRechargeEnabled: vals[SettingManualRechargeEnabled] == "true",
+		ManualRechargeTiers:   parseManualRechargeTiers(vals[SettingManualRechargeTiers]),
+		ManualCSQRImage:       vals[SettingManualCSQRImage],
+		ManualCSHelpText:      vals[SettingManualCSHelpText],
 	}
 	if cfg.AlipayPollStartDelaySec <= 0 {
 		cfg.AlipayPollStartDelaySec = defaultAlipayPollStartDelaySec
@@ -441,6 +476,71 @@ func parseAlipayPollTiers(raw string) []AlipayPollTier {
 		out = append(out, t)
 	}
 	return out
+}
+
+// parseManualRechargeTiers 解析扫码充值档位 JSON 数组。
+// 空串或 JSON 解析失败一律降级为空档位（不报错），逐项丢弃价格/额度非正的档位。
+func parseManualRechargeTiers(raw string) []ManualRechargeTier {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return []ManualRechargeTier{}
+	}
+	var tiers []ManualRechargeTier
+	if err := json.Unmarshal([]byte(raw), &tiers); err != nil {
+		return []ManualRechargeTier{}
+	}
+	out := make([]ManualRechargeTier, 0, len(tiers))
+	for _, t := range tiers {
+		if t.Price <= 0 || t.Credit <= 0 {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
+// SettingsImage 解析图片端点请求，返回原始字节与 MIME 类型。
+// key 无法识别、index 越界或 data URL 解码失败时返回 ok=false（调用方回 404）。
+func (s *PaymentConfigService) SettingsImage(ctx context.Context, key, rawIndex string) (string, []byte, bool) {
+	value, ok := s.settingsImageValue(ctx, key, rawIndex)
+	if !ok {
+		return "", nil, false
+	}
+	mimeType, data, ok := DecodeDataURL(value)
+	if !ok {
+		return "", nil, false
+	}
+	return mimeType, data, true
+}
+
+func (s *PaymentConfigService) settingsImageValue(ctx context.Context, key, rawIndex string) (string, bool) {
+	switch key {
+	case SettingsImageKeySiteLogo:
+		value, err := s.settingRepo.GetValue(ctx, SettingKeySiteLogo)
+		return value, err == nil
+	case SettingsImageKeyHelpImage:
+		value, err := s.settingRepo.GetValue(ctx, SettingHelpImageURL)
+		return value, err == nil
+	case SettingsImageKeyManualCSQR:
+		value, err := s.settingRepo.GetValue(ctx, SettingManualCSQRImage)
+		return value, err == nil
+	case SettingsImageKeyManualTierQR:
+		index, err := strconv.Atoi(strings.TrimSpace(rawIndex))
+		if err != nil || index < 0 {
+			return "", false
+		}
+		raw, err := s.settingRepo.GetValue(ctx, SettingManualRechargeTiers)
+		if err != nil {
+			return "", false
+		}
+		tiers := parseManualRechargeTiers(raw)
+		if index >= len(tiers) {
+			return "", false
+		}
+		return tiers[index].QRImage, true
+	default:
+		return "", false
+	}
 }
 
 // AlipayPollCredentials returns the write-only agent credentials required to
@@ -582,7 +682,9 @@ func (s *PaymentConfigService) UpdatePaymentConfig(ctx context.Context, req Upda
 	if req.ProductNameSuffix != nil {
 		m[SettingProductNameSuffix] = derefStr(req.ProductNameSuffix)
 	}
-	if req.HelpImageURL != nil {
+	// 帮助图片与客服二维码同理：回显的是自有图片端点 URL，回传时跳过写入，
+	// 保留库中已存的 base64（显式传空串仍可清空）。
+	if req.HelpImageURL != nil && !IsOwnSettingsImageURL(*req.HelpImageURL) {
 		m[SettingHelpImageURL] = derefStr(req.HelpImageURL)
 	}
 	if req.HelpText != nil {
@@ -647,6 +749,29 @@ func (s *PaymentConfigService) UpdatePaymentConfig(ctx context.Context, req Upda
 	if req.AlipayPollNote != nil {
 		m[SettingAlipayPollNote] = strings.TrimSpace(*req.AlipayPollNote)
 	}
+	if req.ManualRechargeEnabled != nil {
+		m[SettingManualRechargeEnabled] = formatBoolOrEmpty(req.ManualRechargeEnabled)
+	}
+	if req.ManualRechargeTiers != nil {
+		if err := validateManualRechargeTiers(*req.ManualRechargeTiers); err != nil {
+			return err
+		}
+		tiers := s.resolveManualRechargeTierImages(ctx, *req.ManualRechargeTiers)
+		encoded, err := json.Marshal(tiers)
+		if err != nil {
+			return infraerrors.BadRequest("INVALID_MANUAL_RECHARGE_TIER", "manual recharge tiers are not serialisable")
+		}
+		m[SettingManualRechargeTiers] = string(encoded)
+	}
+	// 客服二维码走单键版本：回传自有图片端点 URL 时跳过写入，保留库中已存的 base64。
+	// nil 一律视为「不改」，只有显式传空串才清空——否则任何一次不含该字段的
+	// 局部更新（如 PUT /admin/payment/config）都会把已存二维码抹掉。
+	if req.ManualCSQRImage != nil && !IsOwnSettingsImageURL(*req.ManualCSQRImage) {
+		m[SettingManualCSQRImage] = derefStr(req.ManualCSQRImage)
+	}
+	if req.ManualCSHelpText != nil {
+		m[SettingManualCSHelpText] = derefStr(req.ManualCSHelpText)
+	}
 	if req.VisibleMethodAlipaySource != nil {
 		m[SettingPaymentVisibleMethodAlipaySource] = derefStr(req.VisibleMethodAlipaySource)
 	}
@@ -680,6 +805,43 @@ func formatAlipayPollTiers(tiers []AlipayPollTier) (string, error) {
 		return "", infraerrors.BadRequest("INVALID_ALIPAY_POLL_TIER", "alipay poll tiers are not serialisable")
 	}
 	return string(encoded), nil
+}
+
+// validateManualRechargeTiers 校验扫码充值档位：实付金额与到账额度都必须为正数。
+func validateManualRechargeTiers(tiers []ManualRechargeTier) error {
+	for _, t := range tiers {
+		if math.IsNaN(t.Price) || math.IsInf(t.Price, 0) || t.Price <= 0 ||
+			math.IsNaN(t.Credit) || math.IsInf(t.Credit, 0) || t.Credit <= 0 {
+			return infraerrors.BadRequest("INVALID_MANUAL_RECHARGE_TIER", "manual recharge tier price and credit must be greater than 0")
+		}
+	}
+	return nil
+}
+
+// resolveManualRechargeTierImages 把回传的自有图片端点 URL 映射回上一版档位的原图。
+// 管理端设置页加载后会把未修改的图片原样回传（即回传端点 URL 而非 base64），
+// 不处理的话保存后 base64 就被这个 URL 字符串覆盖，图片丢失。
+// 映射用 URL 里的 index 而不是数组下标，管理员重排/删减档位后仍能对上各自的原图。
+func (s *PaymentConfigService) resolveManualRechargeTierImages(ctx context.Context, tiers []ManualRechargeTier) []ManualRechargeTier {
+	if len(tiers) == 0 {
+		return tiers
+	}
+	var prevTiers []ManualRechargeTier
+	if raw, err := s.settingRepo.GetValue(ctx, SettingManualRechargeTiers); err == nil {
+		prevTiers = parseManualRechargeTiers(raw)
+	}
+	for i := range tiers {
+		if !IsOwnSettingsImageURL(tiers[i].QRImage) {
+			continue
+		}
+		idx, ok := SettingsImageTierIndex(tiers[i].QRImage)
+		if ok && idx >= 0 && idx < len(prevTiers) {
+			tiers[i].QRImage = prevTiers[idx].QRImage
+			continue
+		}
+		tiers[i].QRImage = ""
+	}
+	return tiers
 }
 
 func formatBoolOrEmpty(v *bool) string {

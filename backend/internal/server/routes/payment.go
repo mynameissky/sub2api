@@ -63,6 +63,11 @@ func RegisterPaymentRoutes(
 		public.POST("/orders/resolve", paymentHandler.ResolveOrderPublicByResumeToken)
 	}
 
+	// --- Settings image endpoint (no auth) ---
+	// 浏览器 <img> 标签无法携带 Authorization 头，因此存成 data URL 的图片
+	// （站点 logo / 帮助图片 / 扫码充值二维码）必须走免鉴权端点。
+	v1.GET("/settings/image", paymentHandler.GetImage)
+
 	// --- Webhook endpoints (no auth) ---
 	webhook := v1.Group("/payment/webhook")
 	{

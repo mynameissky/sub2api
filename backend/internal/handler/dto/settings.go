@@ -302,6 +302,13 @@ type SystemSettings struct {
 	PaymentAlipayPollUserID   string `json:"payment_alipay_poll_user_id"`
 	PaymentAlipayPollNote     string `json:"payment_alipay_poll_note"`
 
+	// 扫码人工充值（管理端回显 base64 原图，供继续编辑；
+	// 用户侧接口回显的是图片端点 URL，见 handler.PaymentHandler.stripPaymentConfigImages）
+	PaymentManualRechargeEnabled bool                         `json:"payment_manual_recharge_enabled"`
+	PaymentManualRechargeTiers   []service.ManualRechargeTier `json:"payment_manual_recharge_tiers"`
+	PaymentManualCSQRImage       string                       `json:"payment_manual_cs_qr_image"`
+	PaymentManualCSHelpText      string                       `json:"payment_manual_cs_help_text"`
+
 	// Force Alipay mobile clients to use QR code payment instead of mobile redirect
 	PaymentAlipayForceQRCode bool `json:"payment_alipay_force_qrcode"`
 	// Use Alipay face-to-face precreate and an app deep link on mobile clients.

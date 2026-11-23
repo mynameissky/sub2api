@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -38,7 +39,24 @@ func (h *PaymentHandler) GetPaymentConfig(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	service.StripPaymentConfigImages(cfg)
 	response.Success(c, cfg)
+}
+
+// GetImage serves images stored as data URLs in settings.
+// GET /api/v1/settings/image?key=...&index=...
+//
+// 该端点必须免鉴权：浏览器 <img> 标签无法携带 Authorization 头。
+func (h *PaymentHandler) GetImage(c *gin.Context) {
+	mimeType, data, ok := h.configService.SettingsImage(
+		c.Request.Context(), c.Query(service.SettingsImageQueryKey), c.Query(service.SettingsImageIndexQueryKey),
+	)
+	if !ok {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	c.Header("Cache-Control", "public, max-age=300")
+	c.Data(http.StatusOK, mimeType, data)
 }
 
 // GetPlans returns subscription plans available for sale.
@@ -142,6 +160,8 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 
 	// 支付宝轮询充值：凭证（ApiKey/智能体ID）绝不下发，此处只暴露展示所需的档位与时长。
 	alipayPollEnabled := cfg.AlipayPollEnabled && len(cfg.AlipayPollTiers) > 0
+	// 扫码人工充值：没有需要保密的凭证，档位与客服二维码都要下发给用户。
+	service.StripPaymentConfigImages(cfg)
 
 	response.Success(c, checkoutInfoResponse{
 		Methods:                       limitsResp.Methods,
@@ -162,6 +182,10 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 		AlipayPollStartDelaySec:       cfg.AlipayPollStartDelaySec,
 		AlipayPollIntervalSec:         cfg.AlipayPollIntervalSec,
 		AlipayPollTimeoutSec:          cfg.AlipayPollTimeoutSec,
+		ManualRechargeEnabled:         cfg.ManualRechargeEnabled,
+		ManualRechargeTiers:           cfg.ManualRechargeTiers,
+		ManualCSQRImage:               cfg.ManualCSQRImage,
+		ManualCSHelpText:              cfg.ManualCSHelpText,
 	})
 }
 
@@ -194,6 +218,12 @@ type checkoutInfoResponse struct {
 	AlipayPollStartDelaySec int                      `json:"alipay_poll_start_delay_sec"`
 	AlipayPollIntervalSec   int                      `json:"alipay_poll_interval_sec"`
 	AlipayPollTimeoutSec    int                      `json:"alipay_poll_timeout_sec"`
+
+	// 扫码人工充值（图片字段已替换为图片端点 URL）
+	ManualRechargeEnabled bool                         `json:"manual_recharge_enabled"`
+	ManualRechargeTiers   []service.ManualRechargeTier `json:"manual_recharge_tiers"`
+	ManualCSQRImage       string                       `json:"manual_cs_qr_image"`
+	ManualCSHelpText      string                       `json:"manual_cs_help_text"`
 }
 
 type checkoutPlan struct {

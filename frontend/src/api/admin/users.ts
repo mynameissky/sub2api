@@ -169,18 +169,22 @@ export async function deleteUser(id: number): Promise<{ message: string }> {
  * @param balance - New balance
  * @param operation - Operation type ('set', 'add', 'subtract')
  * @param notes - Optional notes for the balance adjustment
+ * @param payAmount - Optional actual amount paid (¥) for the manual QR recharge
+ *   flow; when set, the backend also records a paid order for the user.
  * @returns Updated user
  */
 export async function updateBalance(
   id: number,
   balance: number,
   operation: 'set' | 'add' | 'subtract' = 'set',
-  notes?: string
+  notes?: string,
+  payAmount?: number
 ): Promise<AdminUser> {
   const { data } = await apiClient.post<AdminUser>(`/admin/users/${id}/balance`, {
     balance,
     operation,
-    notes: notes || ''
+    notes: notes || '',
+    ...(payAmount && payAmount > 0 ? { pay_amount: payAmount } : {})
   })
   return data
 }

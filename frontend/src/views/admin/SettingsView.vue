@@ -8516,6 +8516,124 @@
                     ></textarea>
                   </div>
                 </div>
+                <!-- Row 6: Manual (offline) recharge (fixed tiers + CS QR code) -->
+                <div
+                  class="rounded-lg border border-gray-200 p-4 dark:border-dark-700"
+                >
+                  <div class="flex items-start justify-between gap-4">
+                    <div class="min-w-0">
+                      <label class="input-label mb-0">{{
+                        t("admin.settings.payment.manualRechargeEnabled")
+                      }}</label>
+                      <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                        {{ t("admin.settings.payment.manualRechargeHint") }}
+                      </p>
+                    </div>
+                    <Toggle v-model="form.payment_manual_recharge_enabled" />
+                  </div>
+
+                  <template v-if="form.payment_manual_recharge_enabled">
+                    <!-- Tier editor -->
+                    <div class="mt-4">
+                      <div class="flex items-center justify-between">
+                        <label class="input-label mb-0">{{
+                          t("admin.settings.payment.alipayPollTiers")
+                        }}</label>
+                        <button
+                          type="button"
+                          class="btn btn-secondary btn-sm"
+                          @click="addManualTier"
+                        >
+                          {{ t("admin.settings.payment.manualTierAdd") }}
+                        </button>
+                      </div>
+                      <div
+                        v-for="(tier, index) in form.payment_manual_recharge_tiers"
+                        :key="index"
+                        class="mt-2 rounded-lg border border-gray-200 p-3 dark:border-dark-700"
+                      >
+                        <div class="flex items-center justify-between gap-2">
+                          <span
+                            class="text-xs font-medium text-gray-400 dark:text-gray-500"
+                            >#{{ index + 1 }}</span
+                          >
+                          <button
+                            type="button"
+                            class="btn btn-secondary btn-sm text-red-600 hover:text-red-700 dark:text-red-400"
+                            @click="removeManualTier(index)"
+                          >
+                            {{ t("admin.settings.site.remove") }}
+                          </button>
+                        </div>
+                        <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          <div>
+                            <label class="input-label">{{
+                              t("admin.settings.payment.manualTierPrice")
+                            }}</label>
+                            <input
+                              v-model.number="tier.price"
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              class="input"
+                            />
+                          </div>
+                          <div>
+                            <label class="input-label">{{
+                              t("admin.settings.payment.manualTierCredit")
+                            }}</label>
+                            <input
+                              v-model.number="tier.credit"
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              class="input"
+                            />
+                          </div>
+                        </div>
+                        <div class="mt-2">
+                          <label class="input-label">{{
+                            t("admin.settings.payment.manualTierQR")
+                          }}</label>
+                          <ImageUpload
+                            v-model="tier.qr_image"
+                            :upload-label="t('admin.settings.site.uploadImage')"
+                            :remove-label="t('admin.settings.site.remove')"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Customer-service QR code + help text -->
+                    <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label class="input-label">{{
+                          t("admin.settings.payment.manualCSQR")
+                        }}</label>
+                        <ImageUpload
+                          v-model="form.payment_manual_cs_qr_image"
+                          :upload-label="t('admin.settings.site.uploadImage')"
+                          :remove-label="t('admin.settings.site.remove')"
+                        />
+                      </div>
+                      <div>
+                        <label class="input-label">{{
+                          t("admin.settings.payment.manualCSHelpText")
+                        }}</label>
+                        <textarea
+                          v-model="form.payment_manual_cs_help_text"
+                          rows="3"
+                          class="input"
+                          :placeholder="
+                            t(
+                              'admin.settings.payment.manualCSHelpTextPlaceholder',
+                            )
+                          "
+                        ></textarea>
+                      </div>
+                    </div>
+                  </template>
+                </div>
               </template>
             </div>
           </div>
@@ -9064,6 +9182,7 @@ import type {
   DefaultPlatformQuotasMap,
   OpenAIFastPolicyRule,
   PaymentAlipayPollTier,
+  PaymentManualRechargeTier,
   WeChatConnectMode,
   WebSearchEmulationConfig,
   WebSearchProviderConfig,
@@ -9802,6 +9921,11 @@ type SettingsForm = Omit<
   // 支付宝轮询充值：form 内始终为具体值（SystemSettings 标记为可选）
   payment_alipay_poll_enabled: boolean;
   payment_alipay_poll_tiers: PaymentAlipayPollTier[];
+  // 扫码人工充值：form 内始终为具体值（SystemSettings 标记为可选）
+  payment_manual_recharge_enabled: boolean;
+  payment_manual_recharge_tiers: PaymentManualRechargeTier[];
+  payment_manual_cs_qr_image: string;
+  payment_manual_cs_help_text: string;
   payment_alipay_poll_api_key: string;
   payment_alipay_poll_agent_id: string;
   payment_alipay_poll_start_delay_sec: number;
@@ -9886,6 +10010,10 @@ const form = reactive<SettingsForm>({
   payment_alipay_mobile_precreate_deep_link: false,
   payment_alipay_poll_enabled: false,
   payment_alipay_poll_tiers: [] as PaymentAlipayPollTier[],
+  payment_manual_recharge_enabled: false,
+  payment_manual_recharge_tiers: [] as PaymentManualRechargeTier[],
+  payment_manual_cs_qr_image: "",
+  payment_manual_cs_help_text: "",
   payment_alipay_poll_api_key: "",
   payment_alipay_poll_agent_id: "",
   payment_alipay_poll_start_delay_sec: 30,
@@ -11137,6 +11265,21 @@ async function loadSettings() {
           credit: Number(tier?.credit) || 0,
         }))
       : [];
+    // 扫码人工充值：档位必须为数组，二维码走通用 loadSettings 逐键赋值
+    form.payment_manual_recharge_enabled = Boolean(
+      settings.payment_manual_recharge_enabled,
+    );
+    form.payment_manual_recharge_tiers = Array.isArray(
+      settings.payment_manual_recharge_tiers,
+    )
+      ? settings.payment_manual_recharge_tiers.map((tier) => ({
+          price: Number(tier?.price) || 0,
+          credit: Number(tier?.credit) || 0,
+          qr_image: tier?.qr_image || "",
+        }))
+      : [];
+    form.payment_manual_cs_qr_image = settings.payment_manual_cs_qr_image || "";
+    form.payment_manual_cs_help_text = settings.payment_manual_cs_help_text || "";
     form.payment_alipay_poll_api_key = settings.payment_alipay_poll_api_key || "";
     form.payment_alipay_poll_agent_id =
       settings.payment_alipay_poll_agent_id || "";
@@ -11748,6 +11891,17 @@ async function saveSettings() {
         price: Number(tier.price) || 0,
         credit: Number(tier.credit) || 0,
       })),
+      // 扫码人工充值：档位与二维码（未修改的图片回传端点 URL，由后端映射回原图）
+      payment_manual_recharge_enabled: form.payment_manual_recharge_enabled,
+      payment_manual_recharge_tiers: form.payment_manual_recharge_tiers.map(
+        (tier) => ({
+          price: Number(tier.price) || 0,
+          credit: Number(tier.credit) || 0,
+          qr_image: tier.qr_image,
+        }),
+      ),
+      payment_manual_cs_qr_image: form.payment_manual_cs_qr_image,
+      payment_manual_cs_help_text: form.payment_manual_cs_help_text,
       payment_alipay_poll_api_key: form.payment_alipay_poll_api_key.trim(),
       payment_alipay_poll_agent_id: form.payment_alipay_poll_agent_id.trim(),
       payment_alipay_poll_start_delay_sec:
@@ -12559,6 +12713,22 @@ function isPaymentTypeEnabled(type: string): boolean {
 const hasAnyPaymentTypeEnabled = computed(
   () => form.payment_enabled_types.length > 0,
 );
+
+// ---- 扫码人工充值档位编辑 ----
+function addManualTier() {
+  if (!Array.isArray(form.payment_manual_recharge_tiers)) {
+    form.payment_manual_recharge_tiers = [];
+  }
+  form.payment_manual_recharge_tiers.push({
+    price: 0,
+    credit: 0,
+    qr_image: "",
+  });
+}
+
+function removeManualTier(idx: number) {
+  form.payment_manual_recharge_tiers.splice(idx, 1);
+}
 
 // ---- 支付宝轮询充值档位编辑 ----
 function addAlipayPollTier() {

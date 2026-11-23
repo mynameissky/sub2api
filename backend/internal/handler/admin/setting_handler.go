@@ -130,6 +130,10 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 	if paymentCfg == nil {
 		paymentCfg = &service.PaymentConfig{}
 	}
+	// 图片字段回显为图片端点 URL（渲染效果相同），否则上传的二维码原图 base64
+	// 会让本接口的响应体膨胀到数 MB——而侧边栏与设置页各会拉一次。
+	// 保存时服务端按 IsOwnSettingsImageURL / index 映射回库中已存的原图。
+	service.StripPaymentConfigImages(paymentCfg)
 	// 支付宝轮询充值的 ApiKey / 智能体ID 是只写凭证：仅管理员设置接口回显。
 	alipayPollCreds := service.AlipayPollCredentials{}
 	if h.paymentConfigService != nil {
@@ -375,6 +379,11 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		PaymentCancelRateLimitMode:                             paymentCfg.CancelRateLimitMode,
 		PaymentAlipayForceQRCode:                               paymentCfg.AlipayForceQRCode,
 		PaymentAlipayMobilePrecreateDeepLink:                   paymentCfg.AlipayMobilePrecreateDeepLink,
+		// 扫码人工充值：回显 base64 原图（不下发图片端点 URL），管理员才能继续编辑
+		PaymentManualRechargeEnabled: paymentCfg.ManualRechargeEnabled,
+		PaymentManualRechargeTiers:   manualRechargeTiersToDTO(paymentCfg.ManualRechargeTiers),
+		PaymentManualCSQRImage:       paymentCfg.ManualCSQRImage,
+		PaymentManualCSHelpText:      paymentCfg.ManualCSHelpText,
 		PaymentAlipayPollEnabled:                               paymentCfg.AlipayPollEnabled,
 		PaymentAlipayPollTiers:                                 alipayPollTiersToDTO(paymentCfg.AlipayPollTiers),
 		PaymentAlipayPollAPIKey:                                alipayPollCreds.APIKey,
@@ -433,6 +442,14 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 func alipayPollTiersToDTO(tiers []service.AlipayPollTier) []service.AlipayPollTier {
 	if tiers == nil {
 		return []service.AlipayPollTier{}
+	}
+	return tiers
+}
+
+// manualRechargeTiersToDTO 保证空档位在 JSON 中仍序列化为 []（而不是 null）。
+func manualRechargeTiersToDTO(tiers []service.ManualRechargeTier) []service.ManualRechargeTier {
+	if tiers == nil {
+		return []service.ManualRechargeTier{}
 	}
 	return tiers
 }

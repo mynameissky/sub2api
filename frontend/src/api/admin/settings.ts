@@ -147,6 +147,13 @@ export interface PaymentAlipayPollTier {
   credit: number;
 }
 
+/** 扫码人工充值的档位：实付金额（¥）、到账额度与收款二维码（data URL） */
+export interface PaymentManualRechargeTier {
+  price: number;
+  credit: number;
+  qr_image: string;
+}
+
 const AUTH_SOURCE_TYPES: AuthSourceType[] = [
   "email",
   "linuxdo",
@@ -701,6 +708,11 @@ export interface SystemSettings {
   payment_alipay_poll_chat_path?: string;
   payment_alipay_poll_user_id?: string;
   payment_alipay_poll_note?: string;
+  /** 扫码人工充值：固定档位 + 客服二维码，付款后由客服人工到账 */
+  payment_manual_recharge_enabled?: boolean;
+  payment_manual_recharge_tiers?: PaymentManualRechargeTier[];
+  payment_manual_cs_qr_image?: string;
+  payment_manual_cs_help_text?: string;
   openai_low_upstream_rate_priority_enabled?: boolean;
   openai_oauth_scheduling_rate_multiplier?: number;
   openai_advanced_scheduler_enabled?: boolean;
@@ -1030,6 +1042,11 @@ export interface UpdateSettingsRequest {
   payment_alipay_poll_chat_path?: string;
   payment_alipay_poll_user_id?: string;
   payment_alipay_poll_note?: string;
+  /** 扫码人工充值：固定档位 + 客服二维码，付款后由客服人工到账 */
+  payment_manual_recharge_enabled?: boolean;
+  payment_manual_recharge_tiers?: PaymentManualRechargeTier[];
+  payment_manual_cs_qr_image?: string;
+  payment_manual_cs_help_text?: string;
   openai_low_upstream_rate_priority_enabled?: boolean;
   openai_oauth_scheduling_rate_multiplier?: number;
   openai_advanced_scheduler_enabled?: boolean;

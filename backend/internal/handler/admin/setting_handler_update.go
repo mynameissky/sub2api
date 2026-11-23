@@ -342,6 +342,12 @@ type UpdateSettingsRequest struct {
 	PaymentAlipayPollUserID   *string `json:"payment_alipay_poll_user_id"`
 	PaymentAlipayPollNote     *string `json:"payment_alipay_poll_note"`
 
+	// 扫码人工充值
+	PaymentManualRechargeEnabled *bool                         `json:"payment_manual_recharge_enabled"`
+	PaymentManualRechargeTiers   *[]service.ManualRechargeTier `json:"payment_manual_recharge_tiers"`
+	PaymentManualCSQRImage       *string                       `json:"payment_manual_cs_qr_image"`
+	PaymentManualCSHelpText      *string                       `json:"payment_manual_cs_help_text"`
+
 	// Channel Monitor feature switch
 	ChannelMonitorEnabled                *bool   `json:"channel_monitor_enabled"`
 	ChannelMonitorMode                   *string `json:"channel_monitor_mode"`
@@ -2117,6 +2123,11 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			AlipayPollChatPath:      req.PaymentAlipayPollChatPath,
 			AlipayPollUserID:        req.PaymentAlipayPollUserID,
 			AlipayPollNote:          req.PaymentAlipayPollNote,
+
+			ManualRechargeEnabled: req.PaymentManualRechargeEnabled,
+			ManualRechargeTiers:   req.PaymentManualRechargeTiers,
+			ManualCSQRImage:       req.PaymentManualCSQRImage,
+			ManualCSHelpText:      req.PaymentManualCSHelpText,
 		}
 		if err := h.paymentConfigService.UpdatePaymentConfig(c.Request.Context(), paymentReq); err != nil {
 			response.ErrorFrom(c, err)
@@ -2158,6 +2169,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	if updatedPaymentCfg == nil {
 		updatedPaymentCfg = &service.PaymentConfig{}
 	}
+	// 与 GetSettings 一致：图片字段回显为图片端点 URL，避免响应体被 base64 撑大。
+	service.StripPaymentConfigImages(updatedPaymentCfg)
 	// 只写凭证：回显给管理员以便继续编辑
 	updatedAlipayPollCreds := service.AlipayPollCredentials{}
 	if h.paymentConfigService != nil {
@@ -2398,6 +2411,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		PaymentCancelRateLimitMode:                             updatedPaymentCfg.CancelRateLimitMode,
 		PaymentAlipayForceQRCode:                               updatedPaymentCfg.AlipayForceQRCode,
 		PaymentAlipayMobilePrecreateDeepLink:                   updatedPaymentCfg.AlipayMobilePrecreateDeepLink,
+		PaymentManualRechargeEnabled:                           updatedPaymentCfg.ManualRechargeEnabled,
+		PaymentManualRechargeTiers:                             manualRechargeTiersToDTO(updatedPaymentCfg.ManualRechargeTiers),
+		PaymentManualCSQRImage:                                 updatedPaymentCfg.ManualCSQRImage,
+		PaymentManualCSHelpText:                                updatedPaymentCfg.ManualCSHelpText,
 		PaymentAlipayPollEnabled:                               updatedPaymentCfg.AlipayPollEnabled,
 		PaymentAlipayPollTiers:                                 alipayPollTiersToDTO(updatedPaymentCfg.AlipayPollTiers),
 		PaymentAlipayPollAPIKey:                                updatedAlipayPollCreds.APIKey,
@@ -2482,7 +2499,9 @@ func hasPaymentFields(req UpdateSettingsRequest) bool {
 		req.PaymentAlipayPollStartDelaySec != nil || req.PaymentAlipayPollIntervalSec != nil ||
 		req.PaymentAlipayPollTimeoutSec != nil ||
 		req.PaymentAlipayPollBaseURL != nil || req.PaymentAlipayPollChatPath != nil ||
-		req.PaymentAlipayPollUserID != nil || req.PaymentAlipayPollNote != nil
+		req.PaymentAlipayPollUserID != nil || req.PaymentAlipayPollNote != nil ||
+		req.PaymentManualRechargeEnabled != nil || req.PaymentManualRechargeTiers != nil ||
+		req.PaymentManualCSQRImage != nil || req.PaymentManualCSHelpText != nil
 }
 
 // ensureDingTalkSyncAttributes 在保存 settings 后，按 admin 配置的 (attr key, attr name)

@@ -169,6 +169,68 @@
               </template>
             </div>
           </template>
+          <!-- Manual (offline) Recharge Tab -->
+          <template v-else-if="activeTab === 'manual'">
+            <div class="card p-5">
+              <p class="text-xs font-medium text-gray-400 dark:text-gray-500">{{ t('payment.rechargeAccount') }}</p>
+              <p class="mt-1 text-base font-semibold text-gray-900 dark:text-white">{{ user?.username || '' }}</p>
+              <p class="mt-0.5 text-sm font-medium text-green-600 dark:text-green-400">{{ t('payment.currentBalance') }}: {{ user?.balance?.toFixed(2) || '0.00' }}</p>
+            </div>
+
+            <div v-if="manualTiers.length === 0" class="card py-16 text-center">
+              <p class="text-gray-500 dark:text-gray-400">{{ t('payment.notAvailable') }}</p>
+            </div>
+            <template v-else>
+              <!-- Step 1: pick a tier -->
+              <div class="card p-6">
+                <h3 class="mb-4 text-base font-semibold text-gray-900 dark:text-white">{{ t('payment.manualSelectTier') }}</h3>
+                <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  <button v-for="(tier, index) in manualTiers" :key="index" type="button"
+                    class="rounded-xl border-2 p-4 text-center transition-all"
+                    :class="selectedTierIndex === index
+                      ? 'border-primary-500 bg-primary-50 dark:border-primary-400 dark:bg-primary-500/10'
+                      : 'border-gray-200 hover:border-primary-300 dark:border-dark-600 dark:hover:border-primary-500'"
+                    @click="selectedTierIndex = index">
+                    <p class="text-lg font-bold text-gray-900 dark:text-white">¥{{ formatManualAmount(tier.price) }}</p>
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('payment.manualTierCredit', { credit: formatManualAmount(tier.credit) }) }}</p>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Step 2: scan the tier QR code -->
+              <div class="card p-6">
+                <h3 class="mb-4 text-center text-base font-semibold text-gray-900 dark:text-white">
+                  {{ t('payment.manualScanToPay', { price: formatManualAmount(selectedTier?.price ?? 0) }) }}
+                </h3>
+                <div class="flex flex-col items-center gap-3">
+                  <div v-if="selectedTier?.qr_image" class="rounded-xl border border-gray-200 bg-white p-3 dark:border-dark-600">
+                    <img :src="selectedTier.qr_image" alt=""
+                      class="h-56 w-56 cursor-pointer object-contain transition-opacity hover:opacity-80"
+                      @click="previewImage = selectedTier!.qr_image" />
+                  </div>
+                  <p v-else class="text-sm text-amber-600 dark:text-amber-400">{{ t('payment.manualNoQR') }}</p>
+                  <p class="text-center text-xs text-gray-500 dark:text-gray-400">{{ t('payment.manualPayHint') }}</p>
+                </div>
+              </div>
+
+              <!-- Customer service (admins: double-click the title to open the manual recharge dialog) -->
+              <div class="card p-6">
+                <h3 class="mb-4 text-center text-base font-semibold text-gray-900 dark:text-white"
+                  :class="isAdmin ? 'cursor-pointer select-none' : 'cursor-default select-none'"
+                  @dblclick="openAdminRecharge">
+                  {{ t('payment.manualCSLabel') }}
+                </h3>
+                <div class="flex flex-col items-center gap-3">
+                  <div v-if="manualCSQRImage" class="rounded-xl border border-gray-200 bg-white p-3 dark:border-dark-600">
+                    <img :src="manualCSQRImage" alt=""
+                      class="h-56 w-56 cursor-pointer object-contain transition-opacity hover:opacity-80"
+                      @click="previewImage = manualCSQRImage" />
+                  </div>
+                  <p class="text-center text-xs text-gray-500 dark:text-gray-400">{{ manualCSHelpText }}</p>
+                </div>
+              </div>
+            </template>
+          </template>
           <!-- Subscribe Tab -->
           <template v-else-if="activeTab === 'subscription'">
             <!-- Subscription confirm (inline, replaces plan list) -->
@@ -320,6 +382,79 @@
         </div>
       </Transition>
     </Teleport>
+    <!-- Admin Manual Recharge Modal (hidden entry: double-click the CS title) -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="adminRechargeOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" @click.self="closeAdminRecharge">
+          <div class="relative w-full max-w-lg rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-dark-700 dark:bg-dark-900">
+            <button class="absolute right-4 top-4 rounded-lg p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-dark-700 dark:hover:text-gray-200" @click="closeAdminRecharge">
+              <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('payment.adminRecharge.title') }}</h3>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('payment.adminRecharge.subtitle') }}</p>
+
+            <!-- Selected user (read-only summary) -->
+            <div v-if="adminRechargeSelectedUser" class="mt-4 flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-3 py-2 dark:border-dark-700">
+              <div class="min-w-0">
+                <p class="truncate text-sm font-semibold text-gray-900 dark:text-white">{{ adminRechargeSelectedUser.username }}</p>
+                <p class="truncate text-xs text-gray-500 dark:text-gray-400">{{ adminRechargeSelectedUser.email }}</p>
+              </div>
+              <div class="shrink-0 text-right">
+                <p class="text-[10px] text-gray-400 dark:text-gray-500">{{ t('payment.adminRecharge.currentBalance') }}</p>
+                <p class="text-sm font-semibold text-green-600 dark:text-green-400">{{ adminRechargeSelectedUser.balance?.toFixed(2) ?? '0.00' }}</p>
+              </div>
+              <button type="button" class="btn btn-secondary btn-sm shrink-0" @click="adminRechargeSelectedUser = null">{{ t('common.cancel') }}</button>
+            </div>
+
+            <!-- User search -->
+            <template v-else>
+              <label class="input-label mt-4">{{ t('payment.adminRecharge.searchLabel') }}</label>
+              <input v-model="adminRechargeSearchQuery" type="text" autocomplete="off" class="input"
+                :placeholder="t('payment.adminRecharge.searchPlaceholder')" />
+              <div class="mt-2 max-h-52 space-y-1 overflow-y-auto">
+                <p v-if="adminRechargeSearching" class="py-2 text-center text-xs text-gray-400 dark:text-gray-500">{{ t('common.loading') }}</p>
+                <p v-else-if="adminRechargeSearchQuery.trim() && adminRechargeSearchResults.length === 0" class="py-2 text-center text-xs text-gray-400 dark:text-gray-500">{{ t('payment.adminRecharge.noResults') }}</p>
+                <button v-for="candidate in adminRechargeSearchResults" :key="candidate.id" type="button"
+                  class="flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 px-3 py-2 text-left transition-colors hover:border-primary-400 hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-800"
+                  @click="selectAdminRechargeUser(candidate)">
+                  <span class="min-w-0">
+                    <span class="block truncate text-sm font-medium text-gray-900 dark:text-white">{{ candidate.username }}</span>
+                    <span class="block truncate text-xs text-gray-500 dark:text-gray-400">{{ candidate.email }}</span>
+                  </span>
+                  <span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">{{ candidate.balance?.toFixed(2) ?? '0.00' }}</span>
+                </button>
+              </div>
+            </template>
+
+            <!-- Amounts are read-only: they come from the selected tier -->
+            <div class="mt-4 grid grid-cols-2 gap-3">
+              <div>
+                <label class="input-label">{{ t('payment.adminRecharge.payAmount') }}</label>
+                <input :value="adminRechargePayAmount ?? ''" type="text" readonly class="input bg-gray-50 dark:bg-dark-800" />
+              </div>
+              <div>
+                <label class="input-label">{{ t('payment.adminRecharge.credit') }}</label>
+                <input :value="adminRechargeCredit ?? ''" type="text" readonly class="input bg-gray-50 dark:bg-dark-800" />
+              </div>
+            </div>
+
+            <p v-if="adminRechargeError" class="mt-3 text-xs text-red-600 dark:text-red-400">{{ adminRechargeError }}</p>
+            <p v-if="adminRechargeSuccess" class="mt-3 text-xs text-green-600 dark:text-green-400">{{ adminRechargeSuccess }}</p>
+
+            <div class="mt-5 flex gap-2">
+              <button class="btn btn-secondary flex-1" @click="closeAdminRecharge">{{ t('common.cancel') }}</button>
+              <button class="btn btn-primary flex-1" :disabled="adminRechargeSubmitting" @click="submitAdminRecharge">
+                <span v-if="adminRechargeSubmitting" class="flex items-center justify-center gap-2">
+                  <span class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
+                  {{ t('common.processing') }}
+                </span>
+                <span v-else>{{ t('common.confirm') }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
     <!-- Image Preview Overlay -->
     <Teleport to="body">
       <Transition name="modal">
@@ -343,6 +478,8 @@ import { usePaymentStore } from '@/stores/payment'
 import { useSubscriptionStore } from '@/stores/subscriptions'
 import { useAppStore } from '@/stores'
 import { paymentAPI } from '@/api/payment'
+import adminUsersAPI from '@/api/admin/users'
+import type { AdminUser } from '@/types'
 import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiError'
 import { isMobileDevice } from '@/utils/device'
 import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel, type PeakRateFields } from '@/utils/peak-rate'
@@ -401,7 +538,7 @@ const loading = ref(true)
 const submitting = ref(false)
 const errorMessage = ref('')
 const errorHintMessage = ref('')
-const activeTab = ref<'recharge' | 'alipayPoll' | 'subscription'>('recharge')
+const activeTab = ref<'recharge' | 'alipayPoll' | 'subscription' | 'manual'>('recharge')
 const amount = ref<number | null>(null)
 const selectedMethod = ref('')
 const selectedPlan = ref<SubscriptionPlan | null>(null)
@@ -686,6 +823,139 @@ async function pollAlipayPollOrder() {
   scheduleAlipayPollPoll(alipayPollIntervalSec.value)
 }
 
+// ---- 扫码人工充值（固定档位 + 客服二维码，付款后由客服人工到账）----
+
+const manualRechargeEnabled = computed(() => checkout.value.manual_recharge_enabled === true)
+const manualTiers = computed(() => checkout.value.manual_recharge_tiers ?? [])
+const manualCSQRImage = computed(() => checkout.value.manual_cs_qr_image ?? '')
+const manualCSHelpText = computed(() => checkout.value.manual_cs_help_text?.trim() || t('payment.manualCSHelpTextDefault'))
+const selectedTierIndex = ref(0)
+const selectedTier = computed(() => manualTiers.value[selectedTierIndex.value] ?? null)
+const isAdmin = computed(() => authStore.isAdmin)
+
+/** 展示用金额：去掉多余的小数位（12.00 → 12，12.50 → 12.5）。 */
+function formatManualAmount(value: number): string {
+  if (!Number.isFinite(value)) return '0'
+  return String(Math.round(value * 100) / 100)
+}
+
+// ---- 管理员手动充值（入口隐藏在客服标题的双击上）----
+
+const adminRechargeOpen = ref(false)
+const adminRechargeSearchQuery = ref('')
+const adminRechargeSearchResults = ref<AdminUser[]>([])
+const adminRechargeSearching = ref(false)
+const adminRechargeSelectedUser = ref<AdminUser | null>(null)
+const adminRechargePayAmount = ref<number | null>(null)
+const adminRechargeCredit = ref<number | null>(null)
+const adminRechargeError = ref('')
+const adminRechargeSuccess = ref('')
+const adminRechargeSubmitting = ref(false)
+let adminRechargeSearchTimer: ReturnType<typeof setTimeout> | null = null
+
+const ADMIN_RECHARGE_SEARCH_DEBOUNCE_MS = 400
+
+function openAdminRecharge() {
+  if (!isAdmin.value) return
+  adminRechargeSearchQuery.value = ''
+  adminRechargeSearchResults.value = []
+  adminRechargeSelectedUser.value = null
+  // 预填当前选中档位：实付金额与到账额度在弹窗里只读
+  adminRechargePayAmount.value = selectedTier.value?.price ?? null
+  adminRechargeCredit.value = selectedTier.value?.credit ?? null
+  adminRechargeError.value = ''
+  adminRechargeSuccess.value = ''
+  adminRechargeOpen.value = true
+}
+
+function clearAdminRechargeSearchTimer() {
+  if (adminRechargeSearchTimer !== null) {
+    clearTimeout(adminRechargeSearchTimer)
+    adminRechargeSearchTimer = null
+  }
+}
+
+function closeAdminRecharge() {
+  clearAdminRechargeSearchTimer()
+  adminRechargeOpen.value = false
+}
+
+watch(adminRechargeSearchQuery, (query) => {
+  clearAdminRechargeSearchTimer()
+  const keyword = query.trim()
+  if (!keyword) {
+    adminRechargeSearchResults.value = []
+    adminRechargeSearching.value = false
+    return
+  }
+  adminRechargeSearching.value = true
+  adminRechargeSearchTimer = setTimeout(() => {
+    adminRechargeSearchTimer = null
+    void searchAdminRechargeUsers(keyword)
+  }, ADMIN_RECHARGE_SEARCH_DEBOUNCE_MS)
+})
+
+async function searchAdminRechargeUsers(keyword: string) {
+  try {
+    const res = await adminUsersAPI.list(1, 20, { search: keyword })
+    // 关键词可能已经变化：只在仍然是当前关键词时写入结果
+    if (adminRechargeSearchQuery.value.trim() !== keyword) return
+    adminRechargeSearchResults.value = res.items ?? []
+  } catch (err) {
+    if (adminRechargeSearchQuery.value.trim() !== keyword) return
+    adminRechargeSearchResults.value = []
+    adminRechargeError.value = extractApiErrorMessage(err, t('payment.adminRecharge.errorGeneric'))
+  } finally {
+    adminRechargeSearching.value = false
+  }
+}
+
+function selectAdminRechargeUser(target: AdminUser) {
+  adminRechargeSelectedUser.value = target
+  adminRechargeSearchResults.value = []
+  adminRechargeSearchQuery.value = ''
+  adminRechargeError.value = ''
+  adminRechargeSuccess.value = ''
+}
+
+async function submitAdminRecharge() {
+  const target = adminRechargeSelectedUser.value
+  const credit = adminRechargeCredit.value
+  const payAmount = adminRechargePayAmount.value
+  if (!target || adminRechargeSubmitting.value) {
+    adminRechargeError.value = t('payment.adminRecharge.errorNoUser')
+    return
+  }
+  if (credit === null || !Number.isFinite(credit) || credit <= 0) {
+    adminRechargeError.value = t('payment.adminRecharge.errorBadAmount')
+    return
+  }
+  if (payAmount === null || !Number.isFinite(payAmount) || payAmount <= 0) {
+    adminRechargeError.value = t('payment.adminRecharge.errorBadPayAmount')
+    return
+  }
+  adminRechargeSubmitting.value = true
+  adminRechargeError.value = ''
+  adminRechargeSuccess.value = ''
+  try {
+    await adminUsersAPI.updateBalance(target.id, credit, 'add', t('payment.adminRecharge.note'), payAmount)
+    adminRechargeSuccess.value = t('payment.adminRecharge.success')
+    adminRechargeSelectedUser.value = null
+    // 给自己充值后刷新本地余额显示
+    if (user.value?.id === target.id) {
+      authStore.refreshUser()
+    }
+  } catch (err) {
+    adminRechargeError.value = extractApiErrorMessage(err, t('payment.adminRecharge.errorGeneric'))
+  } finally {
+    adminRechargeSubmitting.value = false
+  }
+}
+
+onBeforeUnmount(() => {
+  clearAdminRechargeSearchTimer()
+})
+
 function onPaymentDone() {
   const wasSubscription = paymentState.value.orderType === 'subscription'
   resetPayment()
@@ -726,7 +996,13 @@ const alipayPollAvailable = computed(
 )
 
 const tabs = computed(() => {
-  const result: { key: 'recharge' | 'alipayPoll' | 'subscription'; label: string }[] = []
+  const result: { key: 'recharge' | 'alipayPoll' | 'subscription' | 'manual'; label: string }[] = []
+  // 启用扫码人工充值后，充值页只保留「扫码充值」，自动充值与订阅 Tab 一并隐藏。
+  // 这是有意的独占：用户无法再自助下单或续订，只能扫码 + 找客服。
+  if (manualRechargeEnabled.value) {
+    result.push({ key: 'manual', label: t('payment.tabManual') })
+    return result
+  }
   // 启用支付宝轮询充值后，充值页只保留该方式，常规充值与订阅入口一并隐藏
   if (alipayPollAvailable.value) {
     result.push({ key: 'alipayPoll', label: t('payment.tabAlipayPoll') })
@@ -1372,7 +1648,9 @@ onMounted(async () => {
     }
     await resumeWechatPaymentFromQuery()
     // Handle renewal navigation: ?tab=subscription&group=123
-    if (route.query.tab === 'subscription' && !alipayPollAvailable.value) {
+    // 扫码人工充值独占时显式忽略续订跳转：续订入口点进来也会落到扫码充值页。
+    // 这是有意的，不要"顺手修好"。
+    if (!manualRechargeEnabled.value && route.query.tab === 'subscription' && !alipayPollAvailable.value) {
       activeTab.value = 'subscription'
       if (route.query.group) {
         const groupId = Number(route.query.group)
@@ -1387,7 +1665,10 @@ onMounted(async () => {
     }
     // 启用支付宝轮询充值后充值页只剩一个 tab，此处兜底纠正 activeTab，
     // 避免 ?tab=subscription / balance_disabled 把默认值留在已隐藏的 tab 上。
-    if (alipayPollAvailable.value) {
+    if (manualRechargeEnabled.value) {
+      // 独占模式：只显示扫码充值，忽略其它 Tab 跳转逻辑。
+      activeTab.value = 'manual'
+    } else if (alipayPollAvailable.value) {
       activeTab.value = 'alipayPoll'
     } else if (checkout.value.balance_disabled) {
       activeTab.value = 'subscription'

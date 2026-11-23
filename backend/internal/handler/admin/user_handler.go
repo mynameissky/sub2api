@@ -95,6 +95,9 @@ type UpdateBalanceRequest struct {
 	Balance   float64 `json:"balance" binding:"required,gt=0"`
 	Operation string  `json:"operation" binding:"required,oneof=set add subtract"`
 	Notes     string  `json:"notes"`
+	// PayAmount 是扫码人工充值场景下的实付金额（¥）。带上它时后端会额外补落
+	// 一笔已支付订单，让用户在「我的订单」中看到这笔人工充值。
+	PayAmount *float64 `json:"pay_amount,omitempty"`
 }
 
 type BindUserAuthIdentityRequest struct {
@@ -408,7 +411,7 @@ func (h *UserHandler) UpdateBalance(c *gin.Context) {
 		Body:   req,
 	}
 	executeAdminIdempotentJSON(c, "admin.users.balance.update", idempotencyPayload, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
-		user, execErr := h.adminService.UpdateUserBalance(ctx, userID, req.Balance, req.Operation, req.Notes)
+		user, execErr := h.adminService.UpdateUserBalance(ctx, userID, req.Balance, req.Operation, req.Notes, req.PayAmount)
 		if execErr != nil {
 			return nil, execErr
 		}

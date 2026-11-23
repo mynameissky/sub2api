@@ -88,6 +88,24 @@ export interface CheckoutInfoResponse {
   alipay_poll_interval_sec?: number
   /** Order timeout in seconds, after which the order expires */
   alipay_poll_timeout_sec?: number
+  /** When true, the recharge page is taken over by the manual (offline) recharge flow */
+  manual_recharge_enabled?: boolean
+  /** Fixed-price tiers of the manual recharge flow */
+  manual_recharge_tiers?: ManualRechargeTier[]
+  /** Customer-service QR code, already rewritten to the public image endpoint URL */
+  manual_cs_qr_image?: string
+  /** Customer-service help text shown under the QR code */
+  manual_cs_help_text?: string
+}
+
+/** A single fixed-price tier of the manual (offline) recharge flow */
+export interface ManualRechargeTier {
+  /** Actual amount the user pays in CNY (¥) */
+  price: number
+  /** Balance credit granted after the CS confirms the payment */
+  credit: number
+  /** Tier payment QR code: data URL, or the public settings image endpoint URL */
+  qr_image: string
 }
 
 /** A single recharge tier of the Alipay poll flow */

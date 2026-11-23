@@ -484,6 +484,8 @@ func (h *PaymentHandler) GetConfig(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	// 图片字段回显为图片端点 URL，避免二维码原图 base64 撑大响应体。
+	service.StripPaymentConfigImages(cfg)
 	response.Success(c, cfg)
 }
 
